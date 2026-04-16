@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { supabase, type Conversion } from '../lib/supabase';
 import { format } from 'date-fns';
 import { 
   File, 
@@ -12,66 +11,19 @@ import {
   Clock,
   Search
 } from 'lucide-react';
+import { useStorage } from '../hooks/useStorage';
+import { deleteConversion } from '../utils/storage';
 
 export default function HistoryPage() {
-  const [conversions, setConversions] = useState<Conversion[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { history, refreshHistory } = useStorage();
   const [searchTerm, setSearchTerm] = useState('');
 
-  useEffect(() => {
-    fetchConversions();
-
-    // Real-time subscription
-    const channel = supabase
-      .channel('conversions_changes')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'conversions' },
-        () => {
-          fetchConversions();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-  const fetchConversions = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    try {
-      const { data, error } = await supabase
-        .from('conversions')
-        .select('*')
-        .eq('uid', user.id)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setConversions(data || []);
-    } catch (error) {
-      console.error('Error fetching conversions:', error);
-    } finally {
-      setLoading(false);
-    }
+  const handleDelete = (id: string) => {
+    deleteConversion(id);
+    refreshHistory();
   };
 
-  const handleDelete = async (id: string) => {
-    try {
-      const { error } = await supabase
-        .from('conversions')
-        .delete()
-        .eq('id', id);
-      
-      if (error) throw error;
-    } catch (error) {
-      console.error('Error deleting conversion:', error);
-    }
-  };
-
-  const filtered = conversions.filter(c => 
+  const filtered = history.filter(c => 
     c.file_name?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -109,17 +61,13 @@ export default function HistoryPage() {
         </div>
       </header>
 
-      {loading ? (
-        <div className="flex justify-center py-20">
-          <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
-        </div>
-      ) : filtered.length === 0 ? (
+      {filtered.length === 0 ? (
         <div className="text-center py-20 bg-surface rounded-[24px] border border-border">
           <div className="p-4 bg-white/5 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
             <Clock className="w-8 h-8 text-text-dim/30" />
           </div>
           <h3 className="text-xl font-semibold">No history found</h3>
-          <p className="text-text-dim text-sm">Your converted files will appear here.</p>
+          <p className="text-text-dim text-sm">Your converted files will appear here locally.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4">
@@ -145,16 +93,6 @@ export default function HistoryPage() {
               </div>
 
               <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                {conv.file_url && (
-                  <a 
-                    href={conv.file_url} 
-                    target="_blank" 
-                    rel="noreferrer"
-                    className="p-2 hover:bg-white/5 rounded-lg text-gray-400 hover:text-white transition-all"
-                  >
-                    <Download className="w-5 h-5" />
-                  </a>
-                )}
                 <button 
                   onClick={() => handleDelete(conv.id)}
                   className="p-2 hover:bg-red-500/10 rounded-lg text-gray-400 hover:text-red-500 transition-all"

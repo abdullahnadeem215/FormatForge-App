@@ -3,7 +3,7 @@ import { useDropzone } from 'react-dropzone';
 import { motion, AnimatePresence } from 'motion/react';
 import { Upload, File, X, CheckCircle2, AlertCircle, Download, Loader2, Video, Settings2 } from 'lucide-react';
 import { extractAudioFromVideo } from '../../services/converters/audio';
-import { supabase } from '../../lib/supabase';
+import { saveConversion } from '../../utils/storage';
 import { AUDIO_OUTPUT_FORMATS } from '../../utils/formats';
 
 const BITRATES = ['64k', '128k', '192k', '256k', '320k'];
@@ -41,8 +41,6 @@ export default function VideoToAudio() {
     const newResults: typeof results = [];
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-
       for (const file of files) {
         const blob = await extractAudioFromVideo(file, outputFormat, (p) => setProgress(p), {
           bitrate,
@@ -53,23 +51,16 @@ export default function VideoToAudio() {
         const name = file.name.substring(0, file.name.lastIndexOf('.')) + '.' + outputFormat;
         newResults.push({ name, blob, url });
 
-        // Save to history
-        if (user) {
-          try {
-            await supabase.from('conversions').insert({
-              uid: user.id,
-              type: 'video',
-              input_format: file.name.split('.').pop(),
-              output_format: outputFormat,
-              input_size: file.size,
-              output_size: blob.size,
-              status: 'completed',
-              file_name: name
-            });
-          } catch (e) {
-            console.error('Error saving to history:', e);
-          }
-        }
+        // Save to history locally
+        saveConversion({
+          type: 'video',
+          input_format: file.name.split('.').pop() || '',
+          output_format: outputFormat,
+          input_size: file.size,
+          output_size: blob.size,
+          status: 'completed',
+          file_name: name
+        });
       }
       setResults(newResults);
       setFiles([]);

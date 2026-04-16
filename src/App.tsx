@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   BrowserRouter as Router, 
   Routes, 
@@ -9,21 +9,15 @@ import {
 } from 'react-router-dom';
 import { 
   Image as ImageIcon, 
-  FileText, 
-  Music, 
-  Video, 
   History, 
   User, 
-  LogOut, 
   Menu, 
   X,
   Zap,
-  ChevronRight
 } from 'lucide-react';
-import { supabase } from './lib/supabase';
-import { Session, User as SupabaseUser } from '@supabase/supabase-js';
 import { cn } from './lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+import { useStorage } from './hooks/useStorage';
 
 // Pages
 import Home from './pages/Home';
@@ -35,90 +29,8 @@ import VideoToAudio from './pages/converters/VideoToAudio';
 import DocumentConverter from './pages/converters/DocumentConverter';
 
 export default function App() {
-  const [user, setUser] = useState<SupabaseUser | null>(null);
-  const [loading, setLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-
-  useEffect(() => {
-    // Initial session check
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const handleLogin = async () => {
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: window.location.origin
-        }
-      });
-      if (error) throw error;
-    } catch (error) {
-      console.error('Login failed', error);
-    }
-  };
-
-  const handleLogout = () => supabase.auth.signOut();
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-bg-deep flex items-center justify-center">
-        <motion.div 
-          animate={{ rotate: 360 }}
-          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-        >
-          <Zap className="w-12 h-12 text-purple-400" />
-        </motion.div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-bg-deep flex flex-col items-center justify-center p-4 text-white">
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="max-w-md w-full text-center space-y-8"
-        >
-          <div className="flex justify-center">
-            <div className="p-4 bg-accent-grad rounded-2xl shadow-2xl shadow-purple-500/20">
-              <Zap className="w-16 h-16 text-white" />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <h1 className="text-5xl font-bold tracking-tighter bg-clip-text text-transparent bg-accent-grad">
-              FormatForge Pro
-            </h1>
-            <p className="text-text-dim text-lg">
-              The ultimate AI-powered file conversion suite.
-            </p>
-          </div>
-          <button
-            onClick={handleLogin}
-            className="w-full py-4 bg-white text-black font-bold rounded-xl hover:bg-gray-200 transition-colors flex items-center justify-center gap-2 group"
-          >
-            Get Started with Google
-            <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-          </button>
-          <p className="text-xs text-white/20">
-            Made by MAAHHHA-GROUP
-          </p>
-        </motion.div>
-      </div>
-    );
-  }
+  const { userId } = useStorage();
 
   return (
     <Router>
@@ -148,14 +60,8 @@ export default function App() {
             </nav>
 
             <div className="pt-6 border-t border-border">
-              <button 
-                onClick={handleLogout}
-                className="flex items-center gap-3 w-full p-3 text-text-dim hover:text-white transition-all text-sm"
-              >
-                <LogOut className="w-4 h-4" />
-                <span>Logout</span>
-              </button>
               <div className="mt-4 text-[10px] text-white/20 text-center">Made by MAAHHHA-GROUP</div>
+              <div className="mt-2 text-[8px] text-white/10 text-center uppercase tracking-widest">{userId}</div>
             </div>
           </div>
         </aside>
@@ -167,7 +73,7 @@ export default function App() {
               <Routes>
                 <Route path="/" element={<Home />} />
                 <Route path="/history" element={<HistoryPage />} />
-                <Route path="/profile" element={<Profile user={user} />} />
+                <Route path="/profile" element={<Profile />} />
                 <Route path="/convert/image" element={<ImageConverter />} />
                 <Route path="/convert/audio" element={<AudioConverter />} />
                 <Route path="/convert/video-to-audio" element={<VideoToAudio />} />

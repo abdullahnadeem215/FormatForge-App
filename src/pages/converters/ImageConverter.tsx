@@ -3,7 +3,7 @@ import { useDropzone } from 'react-dropzone';
 import { motion, AnimatePresence } from 'motion/react';
 import { Upload, File, X, CheckCircle2, AlertCircle, Download, Loader2 } from 'lucide-react';
 import { convertImage } from '../../services/converters/image';
-import { supabase } from '../../lib/supabase';
+import { saveConversion } from '../../utils/storage';
 
 const FORMATS = ['png', 'jpg', 'webp'];
 
@@ -35,31 +35,22 @@ export default function ImageConverter() {
     const newResults: typeof results = [];
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-
       for (const file of files) {
         const blob = await convertImage(file, outputFormat, quality / 100);
         const url = URL.createObjectURL(blob);
         const name = file.name.substring(0, file.name.lastIndexOf('.')) + '.' + outputFormat;
         newResults.push({ name, blob, url });
 
-        // Save to history
-        if (user) {
-          try {
-            await supabase.from('conversions').insert({
-              uid: user.id,
-              type: 'image',
-              input_format: file.name.split('.').pop(),
-              output_format: outputFormat,
-              input_size: file.size,
-              output_size: blob.size,
-              status: 'completed',
-              file_name: name
-            });
-          } catch (e) {
-            console.error('Error saving to history:', e);
-          }
-        }
+        // Save to history locally
+        saveConversion({
+          type: 'image',
+          input_format: file.name.split('.').pop() || '',
+          output_format: outputFormat,
+          input_size: file.size,
+          output_size: blob.size,
+          status: 'completed',
+          file_name: name
+        });
       }
       setResults(newResults);
       setFiles([]);

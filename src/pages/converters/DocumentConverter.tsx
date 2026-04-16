@@ -3,7 +3,7 @@ import { useDropzone } from 'react-dropzone';
 import { motion, AnimatePresence } from 'motion/react';
 import { Upload, File, X, CheckCircle2, AlertCircle, Download, Loader2, FileText, Zap } from 'lucide-react';
 import { reconstructDocument, summarizeDocument } from '../../services/gemini';
-import { supabase } from '../../lib/supabase';
+import { saveConversion } from '../../utils/storage';
 
 export default function DocumentConverter() {
   const [file, setFile] = useState<File | null>(null);
@@ -31,8 +31,6 @@ export default function DocumentConverter() {
     setSummary(null);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-
       if (method === 'adobe') {
         if (file.type !== 'application/pdf') {
           throw new Error('Adobe conversion only supports PDF files.');
@@ -56,6 +54,17 @@ export default function DocumentConverter() {
         const name = file.name.substring(0, file.name.lastIndexOf('.')) + '.docx';
         
         setResult({ content: 'Document converted successfully using Adobe PDF Services. Click download to get your DOCX file.', isAdobe: true, url, name });
+        
+        // Save to history locally
+        saveConversion({
+          type: 'document',
+          input_format: file.name.split('.').pop() || '',
+          output_format: 'docx',
+          input_size: file.size,
+          output_size: blob.size,
+          status: 'completed',
+          file_name: name
+        });
       } else {
         const reader = new FileReader();
         const base64Promise = new Promise<string>((resolve) => {
@@ -74,23 +83,17 @@ export default function DocumentConverter() {
         // Also get a summary
         const sum = await summarizeDocument(reconstruction.content);
         setSummary(sum);
-      }
 
-      // Save to history
-      if (user) {
-        try {
-          await supabase.from('conversions').insert({
-            uid: user.id,
-            type: 'document',
-            input_format: file.name.split('.').pop(),
-            output_format: 'docx',
-            input_size: file.size,
-            status: 'completed',
-            file_name: file.name.substring(0, file.name.lastIndexOf('.')) + '.docx'
-          });
-        } catch (e) {
-          console.error('Error saving history:', e);
-        }
+        // Save to history locally
+        saveConversion({
+          type: 'document',
+          input_format: file.name.split('.').pop() || '',
+          output_format: 'docx',
+          input_size: file.size,
+          output_size: 0, // AI reconstruction result is text/markdown usually
+          status: 'completed',
+          file_name: file.name.substring(0, file.name.lastIndexOf('.')) + '.docx'
+        });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'AI processing failed. Ensure the file is a clear image or PDF.');
