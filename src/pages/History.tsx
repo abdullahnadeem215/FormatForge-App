@@ -1,15 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { 
-  collection, 
-  query, 
-  where, 
-  orderBy, 
-  onSnapshot, 
-  deleteDoc, 
-  doc 
-} from 'firebase/firestore';
-import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
+import { supabase, type Conversion } from '../lib/supabase';
 import { format } from 'date-fns';
 import { 
   File, 
@@ -23,43 +14,65 @@ import {
 } from 'lucide-react';
 
 export default function HistoryPage() {
-  const [conversions, setConversions] = useState<any[]>([]);
+  const [conversions, setConversions] = useState<Conversion[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
-    if (!auth.currentUser) return;
+    fetchConversions();
 
-    const q = query(
-      collection(db, 'conversions'),
-      where('uid', '==', auth.currentUser.uid),
-      orderBy('createdAt', 'desc')
-    );
+    // Real-time subscription
+    const channel = supabase
+      .channel('conversions_changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'conversions' },
+        () => {
+          fetchConversions();
+        }
+      )
+      .subscribe();
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setConversions(data);
-      setLoading(false);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'conversions');
-    });
-
-    return unsubscribe;
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
+
+  const fetchConversions = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('conversions')
+        .select('*')
+        .eq('uid', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setConversions(data || []);
+    } catch (error) {
+      console.error('Error fetching conversions:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleDelete = async (id: string) => {
     try {
-      await deleteDoc(doc(db, 'conversions', id));
+      const { error } = await supabase
+        .from('conversions')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `conversions/${id}`);
+      console.error('Error deleting conversion:', error);
     }
   };
 
   const filtered = conversions.filter(c => 
-    c.fileName?.toLowerCase().includes(searchTerm.toLowerCase())
+    c.file_name?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const getIcon = (type: string) => {
@@ -123,18 +136,18 @@ export default function HistoryPage() {
               </div>
               
               <div className="flex-1 min-w-0">
-                <h4 className="font-semibold truncate text-sm">{conv.fileName}</h4>
+                <h4 className="font-semibold truncate text-sm">{conv.file_name}</h4>
                 <div className="flex items-center gap-3 text-[10px] text-text-dim uppercase tracking-wider font-bold">
-                  <span>{conv.inputFormat} → {conv.outputFormat}</span>
-                  <span>•</span>
-                  <span>{conv.createdAt?.toDate ? format(conv.createdAt.toDate(), 'MMM d, h:mm a') : 'Just now'}</span>
+                   <span>{conv.input_format} → {conv.output_format}</span>
+                   <span>•</span>
+                   <span>{conv.created_at ? format(new Date(conv.created_at), 'MMM d, h:mm a') : 'Just now'}</span>
                 </div>
               </div>
 
               <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                {conv.fileUrl && (
+                {conv.file_url && (
                   <a 
-                    href={conv.fileUrl} 
+                    href={conv.file_url} 
                     target="_blank" 
                     rel="noreferrer"
                     className="p-2 hover:bg-white/5 rounded-lg text-gray-400 hover:text-white transition-all"

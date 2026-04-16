@@ -1,10 +1,14 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { User as FirebaseUser } from 'firebase/auth';
+import { User as SupabaseUser } from '@supabase/supabase-js';
 import { Zap, Shield, Mail, Calendar, Crown } from 'lucide-react';
 import { format } from 'date-fns';
 
-export default function Profile({ user }: { user: FirebaseUser }) {
+export default function Profile({ user }: { user: SupabaseUser }) {
+  const meta = user.user_metadata;
+  const displayName = meta.full_name || user.email?.split('@')[0];
+  const photoURL = meta.avatar_url;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -14,16 +18,16 @@ export default function Profile({ user }: { user: FirebaseUser }) {
     >
       <header className="text-center space-y-6">
         <div className="relative inline-block">
-          {user.photoURL ? (
+          {photoURL ? (
             <img 
-              src={user.photoURL} 
-              alt={user.displayName || 'User'} 
+              src={photoURL} 
+              alt={displayName || 'User'} 
               className="w-32 h-32 rounded-full border-4 border-border p-1"
               referrerPolicy="no-referrer"
             />
           ) : (
             <div className="w-32 h-32 rounded-full bg-accent-grad flex items-center justify-center text-4xl font-bold">
-              {user.displayName?.[0] || user.email?.[0]}
+              {displayName?.[0]}
             </div>
           )}
           <div className="absolute -bottom-2 -right-2 p-2 bg-accent-grad rounded-full shadow-lg">
@@ -32,7 +36,7 @@ export default function Profile({ user }: { user: FirebaseUser }) {
         </div>
         
         <div className="space-y-2">
-          <h1 className="text-3xl font-light tracking-tight">{user.displayName}</h1>
+          <h1 className="text-3xl font-light tracking-tight">{displayName}</h1>
           <p className="text-text-dim">{user.email}</p>
         </div>
       </header>
@@ -55,7 +59,7 @@ export default function Profile({ user }: { user: FirebaseUser }) {
             <DetailItem 
               icon={<Calendar className="w-5 h-5 text-purple-400" />} 
               label="Joined" 
-              value={user.metadata.creationTime ? format(new Date(user.metadata.creationTime), 'MMMM d, yyyy') : 'Recently'} 
+              value={user.created_at ? format(new Date(user.created_at), 'MMMM d, yyyy') : 'Recently'} 
             />
             <DetailItem 
               icon={<Zap className="w-5 h-5 text-purple-400" />} 

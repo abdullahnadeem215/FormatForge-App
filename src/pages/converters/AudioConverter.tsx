@@ -3,8 +3,7 @@ import { useDropzone } from 'react-dropzone';
 import { motion, AnimatePresence } from 'motion/react';
 import { Upload, File, X, CheckCircle2, AlertCircle, Download, Loader2, Music, Settings2 } from 'lucide-react';
 import { convertAudio } from '../../services/converters/audio';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
-import { db, auth, handleFirestoreError, OperationType } from '../../lib/firebase';
+import { supabase } from '../../lib/supabase';
 import { AUDIO_OUTPUT_FORMATS } from '../../utils/formats';
 
 const BITRATES = ['64k', '128k', '192k', '256k', '320k'];
@@ -42,6 +41,8 @@ export default function AudioConverter() {
     const newResults: typeof results = [];
 
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+
       for (const file of files) {
         const blob = await convertAudio(file, outputFormat, (p) => setProgress(p), {
           bitrate,
@@ -53,22 +54,20 @@ export default function AudioConverter() {
         newResults.push({ name, blob, url });
 
         // Save to history
-        if (auth.currentUser) {
+        if (user) {
           try {
-            await addDoc(collection(db, 'conversions'), {
-              uid: auth.currentUser.uid,
+            await supabase.from('conversions').insert({
+              uid: user.id,
               type: 'audio',
-              inputFormat: file.name.split('.').pop(),
-              outputFormat,
-              inputSize: file.size,
-              outputSize: blob.size,
-              createdAt: serverTimestamp(),
+              input_format: file.name.split('.').pop(),
+              output_format: outputFormat,
+              input_size: file.size,
+              output_size: blob.size,
               status: 'completed',
-              fileName: name,
-              settings: { bitrate, sampleRate, channels }
+              file_name: name
             });
           } catch (e) {
-            handleFirestoreError(e, OperationType.CREATE, 'conversions');
+            console.error('Error saving to history:', e);
           }
         }
       }

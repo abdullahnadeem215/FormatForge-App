@@ -3,8 +3,7 @@ import { useDropzone } from 'react-dropzone';
 import { motion, AnimatePresence } from 'motion/react';
 import { Upload, File, X, CheckCircle2, AlertCircle, Download, Loader2, FileText, Zap } from 'lucide-react';
 import { reconstructDocument, summarizeDocument } from '../../services/gemini';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
-import { db, auth, handleFirestoreError, OperationType } from '../../lib/firebase';
+import { supabase } from '../../lib/supabase';
 
 export default function DocumentConverter() {
   const [file, setFile] = useState<File | null>(null);
@@ -32,6 +31,8 @@ export default function DocumentConverter() {
     setSummary(null);
 
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+
       if (method === 'adobe') {
         if (file.type !== 'application/pdf') {
           throw new Error('Adobe conversion only supports PDF files.');
@@ -76,21 +77,19 @@ export default function DocumentConverter() {
       }
 
       // Save to history
-      if (auth.currentUser) {
+      if (user) {
         try {
-          await addDoc(collection(db, 'conversions'), {
-            uid: auth.currentUser.uid,
+          await supabase.from('conversions').insert({
+            uid: user.id,
             type: 'document',
-            inputFormat: file.name.split('.').pop(),
-            outputFormat: 'docx',
-            inputSize: file.size,
-            createdAt: serverTimestamp(),
+            input_format: file.name.split('.').pop(),
+            output_format: 'docx',
+            input_size: file.size,
             status: 'completed',
-            fileName: file.name.substring(0, file.name.lastIndexOf('.')) + '.docx',
-            method: method
+            file_name: file.name.substring(0, file.name.lastIndexOf('.')) + '.docx'
           });
         } catch (e) {
-          handleFirestoreError(e, OperationType.CREATE, 'conversions');
+          console.error('Error saving history:', e);
         }
       }
     } catch (err) {
