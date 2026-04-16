@@ -1,0 +1,158 @@
+import React, { useState, useEffect } from 'react';
+import { motion } from 'motion/react';
+import { 
+  collection, 
+  query, 
+  where, 
+  orderBy, 
+  onSnapshot, 
+  deleteDoc, 
+  doc 
+} from 'firebase/firestore';
+import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
+import { format } from 'date-fns';
+import { 
+  File, 
+  Image as ImageIcon, 
+  Music, 
+  Video, 
+  Trash2, 
+  Download, 
+  Clock,
+  Search
+} from 'lucide-react';
+
+export default function HistoryPage() {
+  const [conversions, setConversions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  useEffect(() => {
+    if (!auth.currentUser) return;
+
+    const q = query(
+      collection(db, 'conversions'),
+      where('uid', '==', auth.currentUser.uid),
+      orderBy('createdAt', 'desc')
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setConversions(data);
+      setLoading(false);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'conversions');
+    });
+
+    return unsubscribe;
+  }, []);
+
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'conversions', id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `conversions/${id}`);
+    }
+  };
+
+  const filtered = conversions.filter(c => 
+    c.fileName?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const getIcon = (type: string) => {
+    switch (type) {
+      case 'image': return <ImageIcon className="w-5 h-5 text-blue-400" />;
+      case 'audio': return <Music className="w-5 h-5 text-purple-400" />;
+      case 'video': return <Video className="w-5 h-5 text-pink-400" />;
+      default: return <File className="w-5 h-5 text-gray-400" />;
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      className="space-y-8"
+    >
+      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-light tracking-tight">Conversion History</h1>
+          <p className="text-text-dim text-sm">View and manage your previous file conversions.</p>
+        </div>
+        
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-dim" />
+          <input
+            type="text"
+            placeholder="Search files..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-10 pr-4 py-2 bg-surface border border-border rounded-xl focus:outline-none focus:border-purple-500/50 transition-colors w-full md:w-64 text-sm"
+          />
+        </div>
+      </header>
+
+      {loading ? (
+        <div className="flex justify-center py-20">
+          <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-20 bg-surface rounded-[24px] border border-border">
+          <div className="p-4 bg-white/5 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+            <Clock className="w-8 h-8 text-text-dim/30" />
+          </div>
+          <h3 className="text-xl font-semibold">No history found</h3>
+          <p className="text-text-dim text-sm">Your converted files will appear here.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4">
+          {filtered.map((conv) => (
+            <motion.div
+              layout
+              key={conv.id}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="group p-4 bg-surface border border-border rounded-2xl flex items-center gap-4 hover:border-white/10 transition-all"
+            >
+              <div className="p-3 bg-white/5 rounded-xl">
+                {getIcon(conv.type)}
+              </div>
+              
+              <div className="flex-1 min-w-0">
+                <h4 className="font-semibold truncate text-sm">{conv.fileName}</h4>
+                <div className="flex items-center gap-3 text-[10px] text-text-dim uppercase tracking-wider font-bold">
+                  <span>{conv.inputFormat} → {conv.outputFormat}</span>
+                  <span>•</span>
+                  <span>{conv.createdAt?.toDate ? format(conv.createdAt.toDate(), 'MMM d, h:mm a') : 'Just now'}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                {conv.fileUrl && (
+                  <a 
+                    href={conv.fileUrl} 
+                    target="_blank" 
+                    rel="noreferrer"
+                    className="p-2 hover:bg-white/5 rounded-lg text-gray-400 hover:text-white transition-all"
+                  >
+                    <Download className="w-5 h-5" />
+                  </a>
+                )}
+                <button 
+                  onClick={() => handleDelete(conv.id)}
+                  className="p-2 hover:bg-red-500/10 rounded-lg text-gray-400 hover:text-red-500 transition-all"
+                >
+                  <Trash2 className="w-5 h-5" />
+                </button>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      )}
+    </motion.div>
+  );
+}

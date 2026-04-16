@@ -1,0 +1,80 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Fields:
+    //   - uid: string (required, immutable)
+    //   - email: string (required)
+    //   - createdAt: timestamp (required, immutable)
+    //   - subscriptionTier: string (required, ['free', 'pro'])
+    //
+    // Collection: conversions
+    // Fields:
+    //   - uid: string (required, immutable)
+    //   - type: string (required, ['image', 'document', 'audio', 'video'])
+    //   - inputFormat: string (required)
+    //   - outputFormat: string (required)
+    //   - inputSize: number
+    //   - outputSize: number
+    //   - createdAt: timestamp (required, immutable)
+    //   - status: string (required, ['completed', 'failed'])
+    //   - fileName: string (required)
+    //   - fileUrl: string
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.uid;
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    // Domain Validators
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'createdAt', 'subscriptionTier']) &&
+             data.uid == request.auth.uid &&
+             isValidEmail(data.email) &&
+             data.subscriptionTier in ['free', 'pro'];
+    }
+
+    function isValidConversion(data) {
+      return data.keys().hasAll(['uid', 'type', 'inputFormat', 'outputFormat', 'createdAt', 'status', 'fileName']) &&
+             data.uid == request.auth.uid &&
+             data.type in ['image', 'document', 'audio', 'video'] &&
+             data.status in ['completed', 'failed'] &&
+             data.fileName is string && data.fileName.size() < 255;
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data) && 
+                    request.resource.data.createdAt == resource.data.createdAt &&
+                    request.resource.data.uid == resource.data.uid;
+    }
+
+    match /conversions/{conversionId} {
+      allow read: if isDocOwner();
+      allow create: if isAuthenticated() && isValidConversion(request.resource.data);
+      allow update: if isDocOwner() && isValidConversion(request.resource.data) &&
+                    request.resource.data.uid == resource.data.uid &&
+                    request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isDocOwner();
+    }
+  }
+}
