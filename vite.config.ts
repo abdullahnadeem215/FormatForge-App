@@ -15,18 +15,6 @@ export default defineConfig(({mode}) => {
         '@': path.resolve(__dirname, '.'),
       },
     },
-    server: {
-      port: 3000,
-      strictPort: true,
-      host: '0.0.0.0',
-      hmr: {
-        protocol: 'ws',
-        host: 'localhost',
-        port: 3000,
-        timeout: 120000,
-        overlay: false
-      }
-    },
     optimizeDeps: {
       exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/core'],
     },

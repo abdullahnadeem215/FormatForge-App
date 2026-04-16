@@ -30,7 +30,7 @@ async function startServer() {
   app.use(cors());
   app.use(express.json());
 
-  // COOP/COEP headers for ffmpeg.wasm
+  // COOP/COEP headers for ffmpeg.wasm - REQUIRED for high performance
   app.use((req, res, next) => {
     res.header("Cross-Origin-Embedder-Policy", "require-corp");
     res.header("Cross-Origin-Opener-Policy", "same-origin");
@@ -54,50 +54,40 @@ async function startServer() {
 
     let readStream;
     try {
-      // 1. Create credentials
       const credentials = new ServicePrincipalCredentials({
         clientId,
         clientSecret,
       });
 
-      // 2. Create client instance
       const pdfServices = new PDFServices({ credentials });
 
-      // 3. Upload source file
       readStream = fs.createReadStream(req.file.path);
       const inputAsset = await pdfServices.upload({
         readStream,
         mimeType: MimeType.PDF,
       });
 
-      // 4. Create params
       const params = new ExportPDFParams({
         targetFormat: ExportPDFTargetFormat.DOCX,
       });
 
-      // 5. Create job
       const job = new ExportPDFJob({ inputAsset, params });
 
-      // 6. Submit job
       const pollingURL = await pdfServices.submit({ job });
 
-      // 7. Wait for result
       const pdfServicesResponse = await pdfServices.getJobResult({
         pollingURL,
         resultType: ExportPDFResult,
       });
 
-      // 8. Get result asset
       const resultAsset = (pdfServicesResponse.result as any).asset;
       const streamAsset = await pdfServices.getContent({ asset: resultAsset });
 
-      // 9. Send back to client
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
       res.setHeader("Content-Disposition", `attachment; filename="converted.docx"`);
       
       streamAsset.readStream.pipe(res);
 
-      // Cleanup
       streamAsset.readStream.on("end", () => {
         if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
       });
