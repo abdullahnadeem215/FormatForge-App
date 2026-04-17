@@ -54,13 +54,20 @@ export default function Home() {
       exit={{ opacity: 0, y: -20 }}
       className="space-y-10"
     >
-      <header className="flex justify-between items-end">
+      <header className="flex justify-between items-start">
         <div>
-          <h1 className="text-3xl font-light tracking-tight">
-            What are we <span className="text-white">forging</span> today?
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-8 h-8 flex items-center justify-center bg-accent-grad rounded-lg">
+              <Zap size={16} className="text-white" fill="currentColor" />
+            </div>
+            <h2 className="text-sm font-black italic tracking-tighter text-white">FORMATFORGE PRO</h2>
+          </div>
+          <h1 className="text-4xl font-light tracking-tight">
+            What are we <span className="text-white font-medium italic">forging</span> today?
           </h1>
-          <p className="text-text-dim text-sm mt-2">
-            Select a tool below to start converting your files.
+          <p className="text-text-dim text-sm mt-3 max-w-md leading-relaxed">
+            Revolutionary offline media conversion powered by modern tech and AI. 
+            Choose a tool below to begin.
           </p>
         </div>
         <div className="hidden md:flex items-center gap-3 px-4 py-2 bg-surface border border-border rounded-full text-xs">

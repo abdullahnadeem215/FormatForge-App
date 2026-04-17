@@ -55,7 +55,12 @@ export default function App() {
         )}>
           <div className="h-full flex flex-col p-10">
             <div className="flex items-center gap-3 mb-10">
-              <span className="text-xl font-extrabold tracking-tighter bg-accent-grad bg-clip-text text-transparent">FORMATFORGE PRO</span>
+              <div className="p-2 bg-accent-grad rounded-lg">
+                <Zap size={20} className="text-white" fill="currentColor" />
+              </div>
+              <span className="text-xl font-black italic tracking-tighter text-white">
+                FORMATFORGE <span className="bg-accent-grad bg-clip-text text-transparent not-italic font-bold">PRO</span>
+              </span>
             </div>
 
             <nav className="flex-1 space-y-1">
