@@ -12,6 +12,7 @@ export default function DocumentConverter() {
   const [summary, setSummary] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<any>(null);
+  const [pingResult, setPingResult] = useState<any>(null);
   const [testing, setTesting] = useState(false);
   const [method, setMethod] = useState<'gemini' | 'adobe'>('gemini');
   const [isEditing, setIsEditing] = useState(false);
@@ -126,12 +127,20 @@ export default function DocumentConverter() {
   const testAdobeCredentials = async () => {
     setTesting(true);
     setTestResult(null);
+    setPingResult(null);
     try {
-      const resp = await fetch('/api/test-adobe-credentials');
-      const data = await resp.json();
-      setTestResult(data);
+      // First, check basic connectivity
+      const pingResp = await fetch('/api/ping');
+      const pingData = await pingResp.json();
+      setPingResult(pingData);
+
+      if (pingResp.ok) {
+        const resp = await fetch('/api/test-adobe-credentials');
+        const data = await resp.json();
+        setTestResult(data);
+      }
     } catch (err) {
-      setTestResult({ status: 'Error', message: 'Failed to reach test endpoint' });
+      setTestResult({ status: 'Error', message: 'Failed to reach API server. Check your deployment routing.' });
     } finally {
       setTesting(false);
     }
@@ -361,6 +370,14 @@ export default function DocumentConverter() {
                       {testing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
                       Test Adobe Credentials
                     </button>
+                    {pingResult && (
+                      <div className={cn(
+                        "p-3 rounded-lg text-[10px] font-mono",
+                        pingResult.status === 'ok' ? "bg-green-500/5 text-green-400/70" : "bg-red-500/5 text-red-400/70"
+                      )}>
+                        API Status: {pingResult.message}
+                      </div>
+                    )}
                     {testResult && (
                       <div className={cn(
                         "p-3 rounded-lg text-[10px] font-mono whitespace-pre-wrap",

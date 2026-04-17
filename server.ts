@@ -30,6 +30,10 @@ app.use(cors());
 app.use(express.json());
 
 // Adobe Credentials Test Endpoint
+app.get("/api/ping", (req, res) => {
+  res.json({ status: "ok", message: "API is reachable", environment: process.env.NODE_ENV });
+});
+
 app.get("/api/test-adobe-credentials", async (req, res) => {
   const clientId = process.env.ADOBE_CLIENT_ID;
   const clientSecret = process.env.ADOBE_CLIENT_SECRET;
