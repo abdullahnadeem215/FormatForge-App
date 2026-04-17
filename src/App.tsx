@@ -24,8 +24,7 @@ import Home from './pages/Home';
 import HistoryPage from './pages/History';
 import Profile from './pages/Profile';
 import ImageConverter from './pages/converters/ImageConverter';
-import AudioConverter from './pages/converters/AudioConverter';
-import VideoToAudio from './pages/converters/VideoToAudio';
+import MediaConverter from './pages/converters/MediaConverter';
 import DocumentConverter from './pages/converters/DocumentConverter';
 
 export default function App() {
@@ -75,8 +74,8 @@ export default function App() {
                 <Route path="/history" element={<HistoryPage />} />
                 <Route path="/profile" element={<Profile />} />
                 <Route path="/convert/image" element={<ImageConverter />} />
-                <Route path="/convert/audio" element={<AudioConverter />} />
-                <Route path="/convert/video-to-audio" element={<VideoToAudio />} />
+                <Route path="/convert/audio" element={<MediaConverter />} />
+                <Route path="/convert/video-to-audio" element={<MediaConverter />} />
                 <Route path="/convert/document" element={<DocumentConverter />} />
                 <Route path="*" element={<Navigate to="/" />} />
               </Routes>

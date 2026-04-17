@@ -21,16 +21,16 @@ const converters = [
   },
   {
     id: 'audio',
-    title: 'Audio Converter',
-    description: 'MP3, WAV, AAC, OGG. High quality output.',
+    title: 'Audio Pro',
+    description: 'Convert between MP3, WAV, AAC, OGG, FLAC, M4A. Bitrate control.',
     icon: <Music className="w-8 h-8" />,
     color: 'from-purple-500 to-indigo-500',
     path: '/convert/audio'
   },
   {
     id: 'video-to-audio',
-    title: 'Video to Audio',
-    description: 'Extract audio from MP4, MOV, AVI files.',
+    title: 'Video Rip',
+    description: 'Extract master-quality audio strings from any video file.',
     icon: <Video className="w-8 h-8" />,
     color: 'from-pink-500 to-rose-500',
     path: '/convert/video-to-audio'
