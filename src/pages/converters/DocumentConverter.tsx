@@ -67,7 +67,10 @@ export default function DocumentConverter() {
           try {
             errData = JSON.parse(responseText);
           } catch (e) {
-            throw new Error(`Adobe Conversion failed: ${response.status} ${response.statusText}. This often happens on Vercel due to 10s timeout limits.`);
+            if (response.status === 405) {
+              throw new Error("Adobe Conversion failed: 405 Method Not Allowed. The server endpoint wasn't reached. Ensure you have deployed the latest version with vercel.json configuration.");
+            }
+            throw new Error(`Adobe Conversion failed: ${response.status} ${response.statusText}. This often happens on Vercel due to 10s timeout limits or misconfiguration.`);
           }
           throw new Error(errData.error || 'Adobe conversion failed');
         }
