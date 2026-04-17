@@ -19,12 +19,16 @@
       "runtime": "nodejs20.x",
       "maxDuration": 60,
       "memory": 1024
+    },
+    "api/ilovepdf-to-word.ts": {
+      "maxDuration": 60,
+      "memory": 1024
     }
   },
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "/api/index.ts"
+      "destination": "/api/$1"
     },
     {
       "source": "/(.*)",

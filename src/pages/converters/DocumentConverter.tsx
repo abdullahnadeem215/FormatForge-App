@@ -59,8 +59,21 @@ export default function DocumentConverter() {
         });
 
         if (!response.ok) {
-          const errData = await response.json();
-          throw new Error(errData.error || 'iLovePDF conversion failed');
+          let errorMessage = 'iLovePDF conversion failed';
+          try {
+            const contentType = response.headers.get('content-type');
+            const text = await response.text();
+            
+            if (contentType && contentType.includes('application/json') && text.trim()) {
+              const errData = JSON.parse(text);
+              errorMessage = errData.error || errorMessage;
+            } else if (text.trim()) {
+              errorMessage = text;
+            }
+          } catch (e) {
+            console.error('Error parsing server response:', e);
+          }
+          throw new Error(errorMessage);
         }
 
         ilovePdfBlob = await response.blob();
