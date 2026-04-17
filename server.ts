@@ -45,12 +45,13 @@ async function handleILovePDFConversion(req: any, res: any) {
     return res.status(400).json({ error: "No file uploaded" });
   }
 
-  const publicKey = process.env.ILOVEPDF_PUBLIC_KEY;
-  const secretKey = process.env.ILOVEPDF_SECRET_KEY;
+  const publicKey = process.env.ILOVEPDF_PUBLIC_KEY?.trim();
+  const secretKey = process.env.ILOVEPDF_SECRET_KEY?.trim();
 
   if (!publicKey || !secretKey || publicKey === "undefined" || secretKey === "undefined") {
     return res.status(500).json({ 
-      error: "iLovePDF API credentials not configured. Please set ILOVEPDF_PUBLIC_KEY and ILOVEPDF_SECRET_KEY." 
+      error: "iLovePDF API credentials not configured. Please set ILOVEPDF_PUBLIC_KEY and ILOVEPDF_SECRET_KEY.",
+      debug: { hasPublic: !!publicKey, hasSecret: !!secretKey }
     });
   }
 
@@ -72,23 +73,33 @@ async function handleILovePDFConversion(req: any, res: any) {
     const token = authData.token;
 
     // 2. Start Task (using 'pdfword')
-    const startResponse = await fetch("https://api.ilovepdf.com/v1/start/pdfword", {
+    let startResponse = await fetch("https://api.ilovepdf.com/v1/start/pdfword", {
       method: "GET",
       headers: { "Authorization": `Bearer ${token}` }
     });
     
+    // Fallback if 'pdfword' fails
+    if (!startResponse.ok) {
+      console.warn("iLovePDF 'pdfword' start failed, trying 'pdfoffice' fallback...");
+      startResponse = await fetch("https://api.ilovepdf.com/v1/start/pdfoffice", {
+        method: "GET",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+    }
+
     if (!startResponse.ok) {
       const errorText = await startResponse.text();
       let msg = startResponse.statusText;
       try {
         if (errorText.trim()) {
           const errorData = JSON.parse(errorText);
-          msg = errorData?.error?.message || msg;
+          msg = JSON.stringify(errorData.error || errorData);
         }
       } catch (e) {}
       throw new Error(`iLovePDF Start failed: ${msg}`);
     }
     const { task, server } = (await startResponse.json()) as { task: string; server: string };
+    const toolUsed = startResponse.url.includes('pdfoffice') ? 'pdfoffice' : 'pdfword';
 
     // 3. Upload File
     const formData = new FormData();
@@ -105,8 +116,8 @@ async function handleILovePDFConversion(req: any, res: any) {
     });
 
     if (!uploadResponse.ok) {
-      const errorData: any = await uploadResponse.json();
-      throw new Error(`iLovePDF Upload failed: ${errorData?.error?.message || uploadResponse.statusText}`);
+      const errorText = await uploadResponse.text();
+      throw new Error(`iLovePDF Upload failed: ${errorText || uploadResponse.statusText}`);
     }
     const { server_filename } = (await uploadResponse.json()) as { server_filename: string };
 
@@ -119,7 +130,7 @@ async function handleILovePDFConversion(req: any, res: any) {
       },
       body: JSON.stringify({
         task: task,
-        tool: "pdfword",
+        tool: toolUsed,
         files: [{
           server_filename: server_filename,
           filename: req.file.originalname

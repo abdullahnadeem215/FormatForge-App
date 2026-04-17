@@ -21,12 +21,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // Get API keys
-  const publicKey = process.env.ILOVEPDF_PUBLIC_KEY;
-  const secretKey = process.env.ILOVEPDF_SECRET_KEY;
+  const publicKey = process.env.ILOVEPDF_PUBLIC_KEY?.trim();
+  const secretKey = process.env.ILOVEPDF_SECRET_KEY?.trim();
 
   if (!publicKey || !secretKey || publicKey === 'undefined' || secretKey === 'undefined') {
     return res.status(500).json({ 
       error: 'iLovePDF credentials missing or invalid',
+      debug: { hasPublic: !!publicKey, hasSecret: !!secretKey },
       fix: 'Add ILOVEPDF_PUBLIC_KEY and ILOVEPDF_SECRET_KEY to your environment variables'
     });
   }
@@ -41,7 +42,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    console.log(`Processing: ${file.originalFilename} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+    console.log(`📄 Processing PDF to Word: ${file.originalFilename}`);
 
     // 1. Get Authentication Token
     const authResponse = await fetch("https://api.ilovepdf.com/v1/auth", {
@@ -58,23 +59,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const token = authData.token;
 
     // 2. Start Task (using 'pdfword')
-    const startResponse = await fetch("https://api.ilovepdf.com/v1/start/pdfword", {
+    let startResponse = await fetch("https://api.ilovepdf.com/v1/start/pdfword", {
       method: "GET",
       headers: { "Authorization": `Bearer ${token}` }
     });
     
+    // Fallback if 'pdfword' fails - some accounts might use 'pdfoffice'
+    if (!startResponse.ok) {
+      console.warn("iLovePDF 'pdfword' start failed, trying 'pdfoffice' fallback...");
+      startResponse = await fetch("https://api.ilovepdf.com/v1/start/pdfoffice", {
+        method: "GET",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+    }
+
     if (!startResponse.ok) {
       const errorText = await startResponse.text();
       let msg = startResponse.statusText;
       try {
         if (errorText.trim()) {
           const errorData = JSON.parse(errorText);
-          msg = errorData?.error?.message || msg;
+          msg = JSON.stringify(errorData.error || errorData);
         }
       } catch (e) {}
       throw new Error(`iLovePDF Start failed: ${msg}`);
     }
     const { task, server } = (await startResponse.json()) as { task: string; server: string };
+    
+    // Determine the tool used based on the start URL
+    const toolUsed = startResponse.url.includes('pdfoffice') ? 'pdfoffice' : 'pdfword';
 
     // 3. Upload File
     const formData = new FormData();
@@ -91,8 +104,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     if (!uploadResponse.ok) {
-      const errorData: any = await uploadResponse.json().catch(() => ({}));
-      throw new Error(`iLovePDF Upload failed: ${errorData?.error?.message || uploadResponse.statusText}`);
+      const errorText = await uploadResponse.text();
+      throw new Error(`iLovePDF Upload failed: ${errorText || uploadResponse.statusText}`);
     }
     const { server_filename } = (await uploadResponse.json()) as { server_filename: string };
 
@@ -105,7 +118,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       },
       body: JSON.stringify({
         task: task,
-        tool: "pdfword",
+        tool: toolUsed,
         files: [{
           server_filename: server_filename,
           filename: file.originalFilename
