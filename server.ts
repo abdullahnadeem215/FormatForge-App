@@ -6,6 +6,7 @@ import { fileURLToPath } from "url";
 import multer from "multer";
 import cors from "cors";
 import fs from "fs";
+import fetch from "node-fetch";
 import {
   ServicePrincipalCredentials,
   PDFServices,
@@ -27,6 +28,61 @@ const upload = multer({ dest: "/tmp" });
 
 app.use(cors());
 app.use(express.json());
+
+// Adobe Credentials Test Endpoint
+app.get("/api/test-adobe-credentials", async (req, res) => {
+  const clientId = process.env.ADOBE_CLIENT_ID;
+  const clientSecret = process.env.ADOBE_CLIENT_SECRET;
+
+  console.log("Testing Adobe Credentials...");
+  console.log("Client ID Present:", !!clientId);
+  console.log("Client Secret Present:", !!clientSecret);
+
+  if (!clientId || !clientSecret) {
+    return res.status(500).json({
+      status: "Error",
+      message: "Credentials missing in environment variables.",
+      clientIdPresent: !!clientId,
+      clientSecretPresent: !!clientSecret
+    });
+  }
+
+  try {
+    // Direct fetch test for raw authentication
+    const tokenResponse = await fetch('https://pdf-services.adobe.io/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: 'client_credentials'
+      })
+    });
+
+    const tokenData: any = await tokenResponse.json();
+
+    if (tokenResponse.ok) {
+      res.json({
+        status: "Success",
+        message: "Authentication successful.",
+        token_type: tokenData.token_type,
+        expires_in: tokenData.expires_in
+      });
+    } else {
+      res.status(401).json({
+        status: "Failed",
+        message: "Adobe rejected the credentials.",
+        details: tokenData
+      });
+    }
+  } catch (error: any) {
+    console.error("Test Credential Error:", error);
+    res.status(500).json({
+      status: "Error",
+      message: error.message
+    });
+  }
+});
 
 // COOP/COEP headers for ffmpeg.wasm - REQUIRED for high performance
 app.use((req, res, next) => {
@@ -65,6 +121,8 @@ app.post("/api/convert/pdf-to-docx", upload.single("file"), async (req: any, res
     });
 
     const pdfServices = new PDFServices({ credentials });
+
+    console.log("Adobe ID Check:", clientId.substring(0, 4) + "...");
 
     readStream = fs.createReadStream(req.file.path);
     const inputAsset = await pdfServices.upload({

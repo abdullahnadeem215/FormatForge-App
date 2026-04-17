@@ -11,6 +11,8 @@ export default function DocumentConverter() {
   const [result, setResult] = useState<any | null>(null);
   const [summary, setSummary] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<any>(null);
+  const [testing, setTesting] = useState(false);
   const [method, setMethod] = useState<'gemini' | 'adobe'>('gemini');
   const [isEditing, setIsEditing] = useState(false);
   const [editableContent, setEditableContent] = useState('');
@@ -118,6 +120,20 @@ export default function DocumentConverter() {
       console.error(err);
     } finally {
       setProcessing(false);
+    }
+  };
+
+  const testAdobeCredentials = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const resp = await fetch('/api/test-adobe-credentials');
+      const data = await resp.json();
+      setTestResult(data);
+    } catch (err) {
+      setTestResult({ status: 'Error', message: 'Failed to reach test endpoint' });
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -333,8 +349,26 @@ export default function DocumentConverter() {
                   <span>{error}</span>
                 </div>
                 {error.includes("500") && (
-                  <div className="p-3 bg-purple-500/10 border border-purple-500/20 rounded-lg text-[11px] text-purple-300 leading-relaxed italic">
-                    <strong>Tip:</strong> If you are on Vercel's free plan, complex Adobe conversions may time out after 10 seconds. Try the <strong>Gemini AI</strong> method instead—it works client-side and handles any file size!
+                  <div className="space-y-3">
+                    <div className="p-3 bg-purple-500/10 border border-purple-500/20 rounded-lg text-[11px] text-purple-300 leading-relaxed italic">
+                      <strong>Tip:</strong> If you are on Vercel's free plan, complex Adobe conversions may time out after 10 seconds. Try the <strong>Gemini AI</strong> method instead—it works client-side and handles any file size!
+                    </div>
+                    <button 
+                      onClick={testAdobeCredentials}
+                      disabled={testing}
+                      className="w-full py-2 bg-white/5 border border-white/10 rounded-lg text-xs font-bold hover:bg-white/10 transition-all flex items-center justify-center gap-2"
+                    >
+                      {testing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
+                      Test Adobe Credentials
+                    </button>
+                    {testResult && (
+                      <div className={cn(
+                        "p-3 rounded-lg text-[10px] font-mono whitespace-pre-wrap",
+                        testResult.status === 'Success' ? "bg-green-500/10 text-green-400 border border-green-500/20" : "bg-red-500/10 text-red-400 border border-red-500/20"
+                      )}>
+                        {JSON.stringify(testResult, null, 2)}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

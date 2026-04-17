@@ -50,15 +50,15 @@ export default function App() {
 
         {/* Sidebar */}
         <aside className={cn(
-          "fixed inset-y-0 left-0 z-40 w-60 bg-bg-deep border-r border-border transform transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0",
+          "fixed inset-y-0 left-0 z-40 w-64 bg-bg-deep border-r border-border transform transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0",
           isSidebarOpen ? "translate-x-0" : "-translate-x-full"
         )}>
-          <div className="h-full flex flex-col p-10">
+          <div className="h-full flex flex-col p-6 lg:p-10">
             <div className="flex items-center gap-3 mb-10">
-              <div className="p-2 bg-accent-grad rounded-lg">
+              <div className="p-2 bg-accent-grad rounded-lg shrink-0">
                 <Zap size={20} className="text-white" fill="currentColor" />
               </div>
-              <span className="text-xl font-black italic tracking-tighter text-white">
+              <span className="text-lg lg:text-xl font-black italic tracking-tighter text-white whitespace-nowrap">
                 FORMATFORGE <span className="bg-accent-grad bg-clip-text text-transparent not-italic font-bold">PRO</span>
               </span>
             </div>
@@ -78,7 +78,7 @@ export default function App() {
 
         {/* Main Content */}
         <main className="flex-1 relative overflow-y-auto">
-          <div className="max-w-5xl mx-auto p-10">
+          <div className="max-w-5xl mx-auto p-6 lg:p-10">
             <AnimatePresence mode="wait">
               <Routes>
                 <Route path="/" element={<Home />} />
