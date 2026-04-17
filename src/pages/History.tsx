@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { format } from 'date-fns';
 import { 
   File, 
@@ -13,6 +13,9 @@ import {
 } from 'lucide-react';
 import { useStorage } from '../hooks/useStorage';
 import { deleteConversion } from '../utils/storage';
+import { getFileBlob } from '../utils/db';
+import { saveAs } from 'file-saver';
+import { AlertCircle } from 'lucide-react';
 
 export default function HistoryPage() {
   const { history, refreshHistory } = useStorage();
@@ -21,6 +24,25 @@ export default function HistoryPage() {
   const handleDelete = (id: string) => {
     deleteConversion(id);
     refreshHistory();
+  };
+
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  const handleDownload = async (conv: any) => {
+    try {
+      setDownloadError(null);
+      const blob = await getFileBlob(conv.id);
+      if (blob) {
+        saveAs(blob, conv.file_name);
+      } else {
+        setDownloadError(`File "${conv.file_name}" is no longer in local cache.`);
+        setTimeout(() => setDownloadError(null), 3000);
+      }
+    } catch (err) {
+      console.error('Failed to download from history:', err);
+      setDownloadError("Failed to retrieve file from local storage.");
+      setTimeout(() => setDownloadError(null), 3000);
+    }
   };
 
   const filtered = history.filter(c => 
@@ -61,6 +83,20 @@ export default function HistoryPage() {
         </div>
       </header>
 
+      <AnimatePresence>
+        {downloadError && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-3 text-red-500 text-sm"
+          >
+            <AlertCircle className="w-4 h-4" />
+            {downloadError}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {filtered.length === 0 ? (
         <div className="text-center py-20 bg-surface rounded-[24px] border border-border">
           <div className="p-4 bg-white/5 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
@@ -94,8 +130,16 @@ export default function HistoryPage() {
 
               <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button 
+                  onClick={() => handleDownload(conv)}
+                  className="p-2 hover:bg-green-500/10 rounded-lg text-gray-400 hover:text-green-500 transition-all"
+                  title="Download File"
+                >
+                  <Download className="w-5 h-5" />
+                </button>
+                <button 
                   onClick={() => handleDelete(conv.id)}
                   className="p-2 hover:bg-red-500/10 rounded-lg text-gray-400 hover:text-red-500 transition-all"
+                  title="Delete from History"
                 >
                   <Trash2 className="w-5 h-5" />
                 </button>

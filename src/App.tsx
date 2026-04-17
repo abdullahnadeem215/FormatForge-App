@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   BrowserRouter as Router, 
   Routes, 
@@ -18,6 +18,7 @@ import {
 import { cn } from './lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { useStorage } from './hooks/useStorage';
+import { LoadingScreen } from './components/LoadingScreen';
 
 // Pages
 import Home from './pages/Home';
@@ -28,8 +29,13 @@ import MediaConverter from './pages/converters/MediaConverter';
 import DocumentConverter from './pages/converters/DocumentConverter';
 
 export default function App() {
+  const [isLoading, setIsLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const { userId } = useStorage();
+
+  if (isLoading) {
+    return <LoadingScreen onLoadingComplete={() => setIsLoading(false)} />;
+  }
 
   return (
     <Router>
@@ -59,7 +65,7 @@ export default function App() {
             </nav>
 
             <div className="pt-6 border-t border-border">
-              <div className="mt-4 text-[10px] text-white/20 text-center">Made by MAAHHHA-GROUP</div>
+              <div className="mt-4 text-[10px] text-white/20 text-center">Made by ABDULLAH, HASSAAN and HAMAAD</div>
               <div className="mt-2 text-[8px] text-white/10 text-center uppercase tracking-widest">{userId}</div>
             </div>
           </div>
@@ -83,7 +89,7 @@ export default function App() {
           </div>
           
           <footer className="p-12 text-center text-gray-600 text-sm">
-            Made by MAAHHHA-GROUP
+            Made by ABDULLAH, HASSAAN and HAMAAD
           </footer>
         </main>
       </div>

@@ -103,15 +103,16 @@ export default function DocumentConverter() {
       setSummary(sum);
 
       // Save to history locally
+      const finalBlob = adobeBlob || new Blob([conversionResult.content], { type: 'text/markdown' });
       saveConversion({
         type: 'document',
         input_format: file.name.split('.').pop() || '',
         output_format: method === 'adobe' ? 'docx' : 'md',
         input_size: file.size,
-        output_size: adobeBlob?.size || 0,
+        output_size: finalBlob.size,
         status: 'completed',
         file_name: conversionResult.name || (file.name.substring(0, file.name.lastIndexOf('.')) + (method === 'adobe' ? '.docx' : '.md'))
-      });
+      }, finalBlob);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Processing failed. Ensure the file is clear and valid.');
       console.error(err);

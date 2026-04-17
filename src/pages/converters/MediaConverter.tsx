@@ -107,7 +107,7 @@ export default function MediaConverter() {
         output_size: blob.size,
         status: 'completed',
         file_name: name
-      });
+      }, blob);
       
       // Cleanup
       await ffmpeg.deleteFile(inputFileName);

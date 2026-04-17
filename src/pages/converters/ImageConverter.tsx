@@ -148,7 +148,7 @@ export default function ImageConverter() {
                 output_size: item.convertedBlob.size,
                 status: 'completed',
                 file_name: item.name.substring(0, item.name.lastIndexOf('.')) + '.' + selectedFormat
-            });
+            }, item.convertedBlob);
 
         } catch (err) {
             item.status = 'failed';

@@ -1,5 +1,7 @@
 // All localStorage utility functions for FormatForge
 
+import { storeFileBlob, deleteFileBlob, clearFileBlobs } from './db';
+
 export interface ConversionRecord {
   id: string;
   type: 'image' | 'audio' | 'video' | 'document';
@@ -45,12 +47,17 @@ export const getConversionHistory = (): ConversionRecord[] => {
   }
 };
 
-export const saveConversion = (record: Omit<ConversionRecord, 'id' | 'created_at'>): ConversionRecord => {
+export const saveConversion = (record: Omit<ConversionRecord, 'id' | 'created_at'>, blob?: Blob): ConversionRecord => {
   const newRecord: ConversionRecord = {
     ...record,
     id: `conv_${Date.now()}_${Math.random().toString(36).substring(2, 10)}_${Math.floor(Math.random() * 1000)}`,
     created_at: new Date().toISOString()
   };
+  
+  // Save blob if provided
+  if (blob) {
+    storeFileBlob(newRecord.id, blob, newRecord.file_name).catch(console.error);
+  }
   
   const history = getConversionHistory();
   history.unshift(newRecord);
@@ -67,12 +74,14 @@ export const saveConversion = (record: Omit<ConversionRecord, 'id' | 'created_at
 
 export const clearHistory = (): void => {
   localStorage.removeItem('formatforge_history');
+  clearFileBlobs().catch(console.error);
 };
 
 export const deleteConversion = (id: string): void => {
   const history = getConversionHistory();
   const filtered = history.filter(record => record.id !== id);
   localStorage.setItem('formatforge_history', JSON.stringify(filtered));
+  deleteFileBlob(id).catch(console.error);
 };
 
 export const getPreferences = (): UserPreferences => {
