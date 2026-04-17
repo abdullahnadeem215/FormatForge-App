@@ -70,7 +70,10 @@ export default function DocumentConverter() {
             if (response.status === 405) {
               throw new Error("Adobe Conversion failed: 405 Method Not Allowed. The server endpoint wasn't reached. Ensure you have deployed the latest version with vercel.json configuration.");
             }
-            throw new Error(`Adobe Conversion failed: ${response.status} ${response.statusText}. This often happens on Vercel due to 10s timeout limits or misconfiguration.`);
+            if (response.status === 500) {
+              throw new Error("Adobe Conversion failed: 500 Internal Server Error. This usually means ADOBE_CLIENT_ID or ADOBE_CLIENT_SECRET are missing in your Vercel Environment Variables.");
+            }
+            throw new Error(`Adobe Conversion failed: ${response.status} ${response.statusText}. This often happens on Vercel due to usage limits or misconfiguration.`);
           }
           throw new Error(errData.error || 'Adobe conversion failed');
         }
@@ -323,9 +326,16 @@ export default function DocumentConverter() {
             )}
 
             {error && (
-              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg flex items-center gap-2 text-red-500 text-sm">
-                <AlertCircle className="w-4 h-4" />
-                {error}
+              <div className="space-y-3">
+                <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg flex items-center gap-2 text-red-500 text-sm">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{error}</span>
+                </div>
+                {error.includes("500") && (
+                  <div className="p-3 bg-purple-500/10 border border-purple-500/20 rounded-lg text-[11px] text-purple-300 leading-relaxed italic">
+                    <strong>Tip:</strong> If you are on Vercel's free plan, complex Adobe conversions may time out after 10 seconds. Try the <strong>Gemini AI</strong> method instead—it works client-side and handles any file size!
+                  </div>
+                )}
               </div>
             )}
           </div>

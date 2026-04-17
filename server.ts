@@ -52,6 +52,13 @@ app.post("/api/convert/pdf-to-docx", upload.single("file"), async (req: any, res
 
   let readStream;
   try {
+    console.log("Adobe Conversion Start:", req.file.originalname);
+    
+    if (!clientId || !clientSecret) {
+       console.error("Critical: Adobe Credentials Missing");
+       return res.status(500).json({ error: "Adobe API credentials not configured. Please set ADOBE_CLIENT_ID and ADOBE_CLIENT_SECRET in Vercel Environment Variables." });
+    }
+
     const credentials = new ServicePrincipalCredentials({
       clientId,
       clientSecret,
@@ -123,7 +130,9 @@ setupVite();
 
 export default app;
 
-if (process.env.NODE_ENV !== "production" || process.env.VITE_START_SERVER) {
+const isVercel = process.env.VERCEL === "1" || !!process.env.NOW_REGION;
+
+if (!isVercel) {
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
     console.log("Environment:", process.env.NODE_ENV);
