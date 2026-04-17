@@ -48,7 +48,7 @@ export const getConversionHistory = (): ConversionRecord[] => {
 export const saveConversion = (record: Omit<ConversionRecord, 'id' | 'created_at'>): ConversionRecord => {
   const newRecord: ConversionRecord = {
     ...record,
-    id: `conv_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    id: `conv_${Date.now()}_${Math.random().toString(36).substring(2, 10)}_${Math.floor(Math.random() * 1000)}`,
     created_at: new Date().toISOString()
   };
   
