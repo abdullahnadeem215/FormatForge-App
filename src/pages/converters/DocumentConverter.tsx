@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Upload, File, X, CheckCircle2, AlertCircle, Download, Loader2, FileText, Zap } from 'lucide-react';
 import { reconstructDocument, summarizeDocument } from '../../services/gemini';
 import { saveConversion } from '../../utils/storage';
+import { saveAs } from 'file-saver';
 
 export default function DocumentConverter() {
   const [file, setFile] = useState<File | null>(null);
@@ -11,11 +12,7 @@ export default function DocumentConverter() {
   const [result, setResult] = useState<any | null>(null);
   const [summary, setSummary] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [testResult, setTestResult] = useState<any>(null);
-  const [pingResult, setPingResult] = useState<any>(null);
-  const [debugResult, setDebugResult] = useState<any>(null);
-  const [testing, setTesting] = useState(false);
-  const [method, setMethod] = useState<'gemini' | 'adobe'>('gemini');
+  const [method, setMethod] = useState<'gemini' | 'ilovepdf'>('ilovepdf');
   const [isEditing, setIsEditing] = useState(false);
   const [editableContent, setEditableContent] = useState('');
 
@@ -49,52 +46,36 @@ export default function DocumentConverter() {
       const base64 = await base64Promise;
 
       let conversionResult: any = null;
-      let adobeUrl = '';
-      let adobeBlob: Blob | null = null;
+      let ilovePdfBlob: Blob | null = null;
+      let docUrl = '';
 
-      if (method === 'adobe') {
-        if (file.type !== 'application/pdf') {
-          throw new Error('Adobe conversion only supports PDF files.');
-        }
-
+      if (method === 'ilovepdf') {
         const formData = new FormData();
         formData.append('file', file);
 
-        const response = await fetch('/api/convert/pdf-to-docx', {
+        const response = await fetch('/api/convert/ilovepdf-to-docx', {
           method: 'POST',
           body: formData,
         });
 
         if (!response.ok) {
-          const responseText = await response.text();
-          let errData;
-          try {
-            errData = JSON.parse(responseText);
-          } catch (e) {
-            if (response.status === 405) {
-              throw new Error("Adobe Conversion failed: 405 Method Not Allowed. The server endpoint wasn't reached. Ensure you have deployed the latest version with vercel.json configuration.");
-            }
-            if (response.status === 500) {
-              throw new Error("Adobe Conversion failed: 500 Internal Server Error. This usually means ADOBE_CLIENT_ID or ADOBE_CLIENT_SECRET are missing in your Vercel Environment Variables.");
-            }
-            throw new Error(`Adobe Conversion failed: ${response.status} ${response.statusText}. This often happens on Vercel due to usage limits or misconfiguration.`);
-          }
-          throw new Error(errData.error || 'Adobe conversion failed');
+          const errData = await response.json();
+          throw new Error(errData.error || 'iLovePDF conversion failed');
         }
 
-        adobeBlob = await response.blob();
-        adobeUrl = URL.createObjectURL(adobeBlob);
-        
-        // Also use Gemini to get editable content for preview/edit
+        ilovePdfBlob = await response.blob();
+        docUrl = URL.createObjectURL(ilovePdfBlob);
+
+        // Still get editable content for preview
         const reconstruction = await reconstructDocument(base64, file.type);
         conversionResult = {
-          content: reconstruction.content,
-          isAdobe: true,
-          adobeUrl,
+          ...reconstruction,
+          isILovePdf: true,
+          docUrl,
           name: file.name.substring(0, file.name.lastIndexOf('.')) + '.docx'
         };
       } else {
-        // Use Gemini for both reconstruction and editing
+        // Simple Gemini Markdown
         const reconstruction = await reconstructDocument(base64, file.type);
         conversionResult = reconstruction;
       }
@@ -107,49 +88,21 @@ export default function DocumentConverter() {
       setSummary(sum);
 
       // Save to history locally
-      const finalBlob = adobeBlob || new Blob([conversionResult.content], { type: 'text/markdown' });
+      const finalBlob = ilovePdfBlob || new Blob([conversionResult.content], { type: 'text/markdown' });
       saveConversion({
         type: 'document',
         input_format: file.name.split('.').pop() || '',
-        output_format: method === 'adobe' ? 'docx' : 'md',
+        output_format: method === 'ilovepdf' ? 'docx' : 'md',
         input_size: file.size,
         output_size: finalBlob.size,
         status: 'completed',
-        file_name: conversionResult.name || (file.name.substring(0, file.name.lastIndexOf('.')) + (method === 'adobe' ? '.docx' : '.md'))
+        file_name: conversionResult.name || (file.name.substring(0, file.name.lastIndexOf('.')) + (method === 'ilovepdf' ? '.docx' : '.md'))
       }, finalBlob);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Processing failed. Ensure the file is clear and valid.');
       console.error(err);
     } finally {
       setProcessing(false);
-    }
-  };
-
-  const testAdobeCredentials = async () => {
-    setTesting(true);
-    setTestResult(null);
-    setPingResult(null);
-    setDebugResult(null);
-    try {
-      // First, check basic connectivity
-      const pingResp = await fetch('/api/ping');
-      const pingData = await pingResp.json();
-      setPingResult(pingData);
-
-      if (pingResp.ok) {
-        // Check environment variables
-        const debugResp = await fetch('/api/debug-env');
-        const debugData = await debugResp.json();
-        setDebugResult(debugData);
-
-        const resp = await fetch('/api/test-adobe-credentials');
-        const data = await resp.json();
-        setTestResult(data);
-      }
-    } catch (err) {
-      setTestResult({ status: 'Error', message: 'Failed to reach API server. Check your deployment routing.' });
-    } finally {
-      setTesting(false);
     }
   };
 
@@ -164,10 +117,10 @@ export default function DocumentConverter() {
 
   const downloadOriginal = () => {
     if (!result) return;
-    if (result.isAdobe && result.adobeUrl) {
+    if (result.isILovePdf && result.docUrl) {
       const a = document.createElement('a');
-      a.href = result.adobeUrl;
-      a.download = result.name;
+      a.href = result.docUrl;
+      a.download = result.name || 'document.docx';
       a.click();
       return;
     }
@@ -191,10 +144,10 @@ export default function DocumentConverter() {
         <div className="flex items-center gap-2">
           <h2 className="text-3xl font-light tracking-tight">Document Pro</h2>
           <span className="px-2.5 py-1 bg-purple-500/10 border border-purple-500/20 rounded-md text-[10px] font-bold text-purple-400 uppercase tracking-wider">
-            {method === 'gemini' ? 'Gemini 2.5 Flash' : 'Adobe PDF Services'}
+            {method === 'gemini' ? 'Gemini 2.5 Flash' : 'iLovePDF Pro'}
           </span>
         </div>
-        <p className="text-text-dim text-sm">Advanced AI reconstruction of documents from images or PDFs. Preserves layout and tables.</p>
+        <p className="text-text-dim text-sm">Advanced AI reconstruction of documents from images or PDFs. Preserves layout, tables, and formatting entirely client-side.</p>
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -224,7 +177,7 @@ export default function DocumentConverter() {
               <div className="p-8 bg-surface border border-border rounded-[24px] space-y-6">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xl font-semibold">
-                    {result.isAdobe ? 'Editable Preview' : 'AI Reconstruction'}
+                    {result.isILovePdf ? 'Document Analysis' : 'AI Reconstruction'}
                   </h3>
                   <div className="flex items-center gap-4">
                     <button 
@@ -238,7 +191,7 @@ export default function DocumentConverter() {
                     </button>
                     <div className="flex items-center gap-2">
                        <button onClick={downloadOriginal} className="flex items-center gap-2 text-sm font-bold text-text-dim hover:text-white transition-colors">
-                        <Download className="w-4 h-4" /> {result.isAdobe ? 'Get DOCX' : 'Get Original'}
+                        <Download className="w-4 h-4" /> {result.isILovePdf ? 'Get DOCX' : 'Get Markdown'}
                       </button>
                       {isEditing && (
                         <button onClick={downloadModified} className="flex items-center gap-2 text-sm font-bold text-purple-400 hover:text-purple-300 transition-colors">
@@ -262,9 +215,9 @@ export default function DocumentConverter() {
                       {editableContent || result.content}
                     </div>
                   )}
-                  {result.isAdobe && !isEditing && (
-                    <div className="absolute top-4 right-4 px-2 py-1 bg-blue-500/20 text-blue-400 rounded text-[10px] uppercase font-bold tracking-widest pointer-events-none">
-                      AI Preview from PDF
+                  {result.isILovePdf && !isEditing && (
+                    <div className="absolute top-4 right-4 px-2 py-1 bg-green-500/20 text-green-400 rounded text-[10px] uppercase font-bold tracking-widest pointer-events-none">
+                      {result.isILovePdf ? 'Professional PDF Conversion' : 'High-Fidelity Reconstruction'}
                     </div>
                   )}
                 </div>
@@ -315,14 +268,14 @@ export default function DocumentConverter() {
                   <div className="text-[10px] opacity-70">Best for layout reconstruction & summary</div>
                 </button>
                 <button
-                  onClick={() => setMethod('adobe')}
+                  onClick={() => setMethod('ilovepdf')}
                   className={cn(
                     "p-3 rounded-xl text-left border transition-all",
-                    method === 'adobe' ? "border-purple-500 bg-purple-500/5" : "border-border bg-white/5 text-text-dim"
+                    method === 'ilovepdf' ? "border-purple-500 bg-purple-500/5" : "border-border bg-white/5 text-text-dim"
                   )}
                 >
-                  <div className="font-bold text-sm">Adobe Pro (PDF only)</div>
-                  <div className="text-[10px] opacity-70">Pure DOCX copy with Adobe PDF Services</div>
+                  <div className="font-bold text-sm">iLovePDF (Pro)</div>
+                  <div className="text-[10px] opacity-70">Best for complex layouts & images</div>
                 </button>
               </div>
             </div>
@@ -330,7 +283,7 @@ export default function DocumentConverter() {
             <p className="text-xs text-text-dim leading-relaxed">
               {method === 'gemini' 
                 ? 'Gemini 2.5 Flash will analyze your document to extract text, tables, and maintain formatting.'
-                : 'Adobe PDF Services will convert your PDF into a high-quality, editable Microsoft Word document.'}
+                : 'iLovePDF Pro will convert your document into a pixel-perfect Word file, preserving all images and tables.'}
             </p>
 
             <button
@@ -345,7 +298,7 @@ export default function DocumentConverter() {
                   Processing...
                 </>
               ) : (
-                <>Start {method === 'gemini' ? 'AI Reconstruction' : 'Adobe Conversion'}</>
+                <>Start {method === 'gemini' ? 'AI Reconstruction' : 'iLovePDF Conversion'}</>
               )}
             </button>
 
@@ -364,44 +317,6 @@ export default function DocumentConverter() {
                   <AlertCircle className="w-4 h-4 shrink-0" />
                   <span>{error}</span>
                 </div>
-                {error.includes("500") && (
-                  <div className="space-y-3">
-                    <div className="p-3 bg-purple-500/10 border border-purple-500/20 rounded-lg text-[11px] text-purple-300 leading-relaxed italic">
-                      <strong>Tip:</strong> If you are on Vercel's free plan, complex Adobe conversions may time out after 10 seconds. Try the <strong>Gemini AI</strong> method instead—it works client-side and handles any file size!
-                    </div>
-                    <button 
-                      onClick={testAdobeCredentials}
-                      disabled={testing}
-                      className="w-full py-2 bg-white/5 border border-white/10 rounded-lg text-xs font-bold hover:bg-white/10 transition-all flex items-center justify-center gap-2"
-                    >
-                      {testing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
-                      Test Adobe Credentials
-                    </button>
-                    {pingResult && (
-                      <div className={cn(
-                        "p-3 rounded-lg text-[10px] font-mono",
-                        pingResult.status === 'ok' ? "bg-green-500/5 text-green-400/70" : "bg-red-500/5 text-red-400/70"
-                      )}>
-                        API Status: {pingResult.message}
-                      </div>
-                    )}
-                    {debugResult && (
-                      <div className="p-3 bg-white/5 border border-white/10 rounded-lg text-[10px] font-mono text-white/50 space-y-1">
-                        <div className="flex justify-between"><span>Adobe ID:</span> <span className={debugResult.hasAdobeClientId ? "text-green-400" : "text-red-400"}>{debugResult.hasAdobeClientId ? "PROVISIONED" : "MISSING"}</span></div>
-                        <div className="flex justify-between"><span>Adobe Secret:</span> <span className={debugResult.hasAdobeClientSecret ? "text-green-400" : "text-red-400"}>{debugResult.hasAdobeClientSecret ? "PROVISIONED" : "MISSING"}</span></div>
-                        <div className="flex justify-between"><span>Environment:</span> <span>{debugResult.vercelEnv || debugResult.nodeEnv}</span></div>
-                      </div>
-                    )}
-                    {testResult && (
-                      <div className={cn(
-                        "p-3 rounded-lg text-[10px] font-mono whitespace-pre-wrap",
-                        testResult.status === 'Success' ? "bg-green-500/10 text-green-400 border border-green-500/20" : "bg-red-500/10 text-red-400 border border-red-500/20"
-                      )}>
-                        {JSON.stringify(testResult, null, 2)}
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
             )}
           </div>

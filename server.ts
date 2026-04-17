@@ -7,6 +7,8 @@ import multer from "multer";
 import cors from "cors";
 import fs from "fs";
 import fetch from "node-fetch";
+import ILovePDF from "@ilovepdf/ilovepdf-nodejs";
+import ILovePDFFile from "@ilovepdf/ilovepdf-nodejs/ILovePDFFile.js";
 import {
   ServicePrincipalCredentials,
   PDFServices,
@@ -38,6 +40,8 @@ app.get("/api/debug-env", (req, res) => {
   res.json({
     hasAdobeClientId: !!process.env.ADOBE_CLIENT_ID,
     hasAdobeClientSecret: !!process.env.ADOBE_CLIENT_SECRET,
+    hasILovePdfPublicKey: !!process.env.ILOVEPDF_PUBLIC_KEY,
+    hasILovePdfSecretKey: !!process.env.ILOVEPDF_SECRET_KEY,
     hasGeminiKey: !!process.env.GEMINI_API_KEY,
     nodeEnv: process.env.NODE_ENV,
     vercelEnv: process.env.VERCEL_ENV,
@@ -178,6 +182,80 @@ app.post("/api/convert/pdf-to-docx", upload.single("file"), async (req: any, res
       message = err.message;
     }
     res.status(500).json({ error: message });
+  }
+});
+
+// iLovePDF PDF to Word API
+app.post("/api/convert/ilovepdf-to-docx", upload.single("file"), async (req: any, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "No file uploaded" });
+  }
+
+  const publicKey = process.env.ILOVEPDF_PUBLIC_KEY;
+  const secretKey = process.env.ILOVEPDF_SECRET_KEY;
+
+  console.log("iLovePDF Keys Check:", { 
+    pub: publicKey ? `${publicKey.substring(0, 8)}...` : "MISSING", 
+    sec: secretKey ? `${secretKey.substring(0, 8)}...` : "MISSING" 
+  });
+
+  if (!publicKey || !secretKey || publicKey === "undefined" || secretKey === "undefined") {
+    console.error("iLovePDF Keys Missing or Invalid:", { publicKey: !!publicKey, secretKey: !!secretKey });
+    return res.status(500).json({ 
+      error: "iLovePDF API credentials not configured. Please set ILOVEPDF_PUBLIC_KEY and ILOVEPDF_SECRET_KEY in Vercel Environment Variables." 
+    });
+  }
+
+  try {
+    console.log(`📄 iLovePDF Processing: ${req.file.originalname}`);
+
+    const instance = new ILovePDF(publicKey, secretKey);
+    // The SDK factory is missing some tools, so we use 'officepdf' as a wrapper
+    // and override the internal type for the API request. 
+    // 'pdfword' is the standard v1 API tool name.
+    const task = instance.newTask('officepdf' as any);
+    (task as any).type = 'pdfword'; 
+
+    console.log("Starting iLovePDF task...");
+    await task.start();
+    console.log("Task started successfully. Task ID:", task.id);
+    
+    // Use ILovePDFFile for local file uploads
+    const file = new ILovePDFFile(req.file.path);
+    await task.addFile(file);
+    console.log("File uploaded to iLovePDF server.");
+    
+    await task.process();
+    console.log("Conversion process completed.");
+    
+    const data = await task.download();
+    console.log("File downloaded from iLovePDF.");
+    
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    res.setHeader("Content-Disposition", `attachment; filename="converted.docx"`);
+    res.send(data);
+
+    // Clean up temp file
+    if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+
+  } catch (err: any) {
+    if (err.response && err.response.data) {
+      console.error("iLovePDF API Error Response Data:", JSON.stringify(err.response.data, null, 2));
+      console.error("iLovePDF API Error Type:", err.response.data.error?.type);
+      console.error("iLovePDF API Error Message:", err.response.data.error?.message);
+    }
+    console.error("iLovePDF Full Error Object:", err);
+    if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+    
+    const apiError = err.response?.data?.error;
+    const errorMessage = apiError?.message || err.message || "iLovePDF conversion failed";
+    const errorType = apiError?.type || "UnknownError";
+    
+    res.status(err.response?.status || 500).json({ 
+      error: errorMessage,
+      type: errorType,
+      details: apiError?.param || null
+    });
   }
 });
 
