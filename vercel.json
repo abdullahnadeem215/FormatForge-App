@@ -1,8 +1,12 @@
 {
   "functions": {
-    "api/ilovepdf-to-word.ts": {
+    "api/convert/adobe-to-docx.ts": {
       "maxDuration": 60,
       "memory": 1024
+    },
+    "api/ping.ts": {
+      "maxDuration": 10,
+      "memory": 256
     }
   },
   "rewrites": [

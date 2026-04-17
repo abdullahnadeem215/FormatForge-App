@@ -23,7 +23,20 @@ export const PDF_TO_WORD_SCHEMA = {
 export async function summarizeDocument(text: string) {
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
-    contents: `Summarize the following document content into key points:\n\n${text}`,
+    contents: [{ parts: [{ text: `Summarize the following document content into key points:\n\n${text}` }] }],
+  });
+  return response.text;
+}
+
+export async function summarizePdf(pdfBase64: string) {
+  const response = await ai.models.generateContent({
+    model: "gemini-3-flash-preview",
+    contents: {
+      parts: [
+        { text: "Provide a comprehensive summary of this PDF document, identifying the main sections, core topics, and key takeaways." },
+        { inlineData: { data: pdfBase64, mimeType: "application/pdf" } }
+      ]
+    }
   });
   return response.text;
 }

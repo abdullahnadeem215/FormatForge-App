@@ -7,6 +7,8 @@ import multer from "multer";
 import cors from "cors";
 import fs from "fs";
 
+import AdobeSDK from "@adobe/pdfservices-node-sdk";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -24,8 +26,8 @@ app.get("/api/ping", (req, res) => {
 
 app.get("/api/debug-env", (req, res) => {
   res.json({
-    hasILovePdfPublicKey: !!process.env.ILOVEPDF_PUBLIC_KEY,
-    hasILovePdfSecretKey: !!process.env.ILOVEPDF_SECRET_KEY,
+    hasAdobeClientId: !!process.env.ADOBE_CLIENT_ID,
+    hasAdobeClientSecret: !!process.env.ADOBE_CLIENT_SECRET,
     hasGeminiKey: !!process.env.GEMINI_API_KEY,
     nodeEnv: process.env.NODE_ENV,
     vercelEnv: process.env.VERCEL_ENV,
@@ -39,138 +41,71 @@ app.use((req, res, next) => {
   next();
 });
 
-// iLovePDF Conversion Handler (Shared REST implementation)
-async function handleILovePDFConversion(req: any, res: any) {
+// Adobe PDF Services Conversion Handler
+async function handleAdobeConversion(req: any, res: any) {
   if (!req.file) {
     return res.status(400).json({ error: "No file uploaded" });
   }
 
-  const publicKey = process.env.ILOVEPDF_PUBLIC_KEY?.trim();
-  const secretKey = process.env.ILOVEPDF_SECRET_KEY?.trim();
+  const clientId = process.env.ADOBE_CLIENT_ID?.trim();
+  const clientSecret = process.env.ADOBE_CLIENT_SECRET?.trim();
 
-  if (!publicKey || !secretKey || publicKey === "undefined" || secretKey === "undefined") {
+  if (!clientId || !clientSecret || clientId === "undefined" || clientSecret === "undefined") {
     return res.status(500).json({ 
-      error: "iLovePDF API credentials not configured. Please set ILOVEPDF_PUBLIC_KEY and ILOVEPDF_SECRET_KEY.",
-      debug: { hasPublic: !!publicKey, hasSecret: !!secretKey }
+      error: "Adobe API credentials not configured. Please set ADOBE_CLIENT_ID and ADOBE_CLIENT_SECRET.",
+      debug: { hasClientId: !!clientId, hasClientSecret: !!clientSecret }
     });
   }
 
   try {
-    console.log(`📄 iLovePDF Processing (REST): ${req.file.originalname}`);
+    console.log(`📄 Adobe Processing (v3): ${req.file.originalname}`);
 
-    // 1. Get Authentication Token
-    const authResponse = await fetch("https://api.ilovepdf.com/v1/auth", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ public_key: publicKey })
-    });
+    // 1. Initialise credentials
+    const credentials = AdobeSDK.Credentials.servicePrincipalCredentialsBuilder()
+      .withClientId(clientId)
+      .withClientSecret(clientSecret)
+      .build();
+
+    // 2. Initialise ExecutionContext
+    const executionContext = AdobeSDK.ExecutionContext.create(credentials);
+
+    // 3. Create Export PDF to DOCX operation
+    const exportPDFOperation = AdobeSDK.ExportPDF.Operation.createNew(AdobeSDK.ExportPDF.SupportedTargetFormats.DOCX);
+
+    // 4. Set input
+    const source = AdobeSDK.FileRef.createFromLocalFile(req.file.path, AdobeSDK.ExportPDF.SupportedSourceFormat.pdf);
+    exportPDFOperation.setInput(source);
+
+    // 5. Execute
+    const result = await exportPDFOperation.execute(executionContext);
+
+    const outputFilePath = path.join("/tmp", `converted-${Date.now()}.docx`);
     
-    if (!authResponse.ok) {
-      const errorText = await authResponse.text();
-      throw new Error(`iLovePDF Auth failed: ${errorText || authResponse.statusText}`);
-    }
-    const authData: any = await authResponse.json();
-    const token = authData.token;
+    // saveAsFile is the safest way to ensure the full file is written correctly
+    await result.saveAsFile(outputFilePath);
 
-    // 2. Start Task (using 'pdfword')
-    let startResponse = await fetch("https://api.ilovepdf.com/v1/start/pdfword", {
-      method: "GET",
-      headers: { "Authorization": `Bearer ${token}` }
+    res.download(outputFilePath, "converted.docx", (err) => {
+      // Cleanup both files
+      if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+      if (fs.existsSync(outputFilePath)) fs.unlinkSync(outputFilePath);
+      if (err) {
+        console.error("Download Error:", err);
+      }
     });
-    
-    // Fallback if 'pdfword' fails
-    if (!startResponse.ok) {
-      console.warn("iLovePDF 'pdfword' start failed, trying 'pdfoffice' fallback...");
-      startResponse = await fetch("https://api.ilovepdf.com/v1/start/pdfoffice", {
-        method: "GET",
-        headers: { "Authorization": `Bearer ${token}` }
-      });
-    }
-
-    if (!startResponse.ok) {
-      const errorText = await startResponse.text();
-      let msg = startResponse.statusText;
-      try {
-        if (errorText.trim()) {
-          const errorData = JSON.parse(errorText);
-          msg = JSON.stringify(errorData.error || errorData);
-        }
-      } catch (e) {}
-      throw new Error(`iLovePDF Start failed: ${msg}`);
-    }
-    const { task, server } = (await startResponse.json()) as { task: string; server: string };
-    const toolUsed = startResponse.url.includes('pdfoffice') ? 'pdfoffice' : 'pdfword';
-
-    // 3. Upload File
-    const formData = new FormData();
-    formData.append("task", task);
-    
-    const fileBuffer = fs.readFileSync(req.file.path);
-    const blob = new Blob([fileBuffer], { type: 'application/pdf' });
-    formData.append("file", blob, req.file.originalname);
-
-    const uploadResponse = await fetch(`https://${server}/v1/upload`, {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${token}` },
-      body: formData
-    });
-
-    if (!uploadResponse.ok) {
-      const errorText = await uploadResponse.text();
-      throw new Error(`iLovePDF Upload failed: ${errorText || uploadResponse.statusText}`);
-    }
-    const { server_filename } = (await uploadResponse.json()) as { server_filename: string };
-
-    // 4. Process Task
-    const processResponse = await fetch(`https://${server}/v1/process`, {
-      method: "POST",
-      headers: { 
-        "Authorization": `Bearer ${token}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        task: task,
-        tool: toolUsed,
-        files: [{
-          server_filename: server_filename,
-          filename: req.file.originalname
-        }]
-      })
-    });
-
-    if (!processResponse.ok) {
-      const errorData: any = await processResponse.json();
-      throw new Error(`iLovePDF Processing failed: ${errorData?.error?.message || processResponse.statusText}`);
-    }
-
-    // 5. Download Result
-    const downloadResponse = await fetch(`https://${server}/v1/download/${task}`, {
-      method: "GET",
-      headers: { "Authorization": `Bearer ${token}` }
-    });
-
-    if (!downloadResponse.ok) {
-      throw new Error(`iLovePDF Download failed: ${downloadResponse.statusText}`);
-    }
-    const finalBufferArray = await downloadResponse.arrayBuffer();
-    const finalBuffer = Buffer.from(finalBufferArray);
-
-    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-    res.setHeader("Content-Disposition", `attachment; filename="converted.docx"`);
-    res.send(finalBuffer);
-
-    if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
 
   } catch (err: any) {
-    console.error("iLovePDF Full Error:", err);
+    console.error("Adobe PDF Services Error:", err);
     if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
-    res.status(500).json({ error: err.message || "iLovePDF conversion failed" });
+    res.status(500).json({ 
+      error: err.message || "Adobe conversion failed",
+      details: err.details || "Check Adobe credentials or file format"
+    });
   }
 }
 
-// Routes for both endpoints
-app.post("/api/convert/ilovepdf-to-docx", upload.single("file"), handleILovePDFConversion);
-app.post("/api/ilovepdf-to-word", upload.single("file"), handleILovePDFConversion);
+// Routes
+app.post("/api/convert/adobe-to-docx", upload.single("file"), handleAdobeConversion);
+app.post("/api/convert/ilovepdf-to-docx", upload.single("file"), handleAdobeConversion); // Aliasing for compatibility during transition
 
 // Vite middleware setup
 async function setupVite() {

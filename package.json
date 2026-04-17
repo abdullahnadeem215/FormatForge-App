@@ -13,12 +13,12 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@adobe/pdfservices-node-sdk": "^3.4.1",
     "@capacitor/core": "^8.3.1",
     "@capacitor/splash-screen": "^8.0.1",
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
     "@google/genai": "^1.29.0",
-    "@ilovepdf/ilovepdf-nodejs": "^0.3.1",
     "@tailwindcss/vite": "^4.1.14",
     "@types/node-fetch": "^2.6.11",
     "@vitejs/plugin-react": "^5.0.4",

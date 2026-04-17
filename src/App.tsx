@@ -27,7 +27,6 @@ import Profile from './pages/Profile';
 import ImageConverter from './pages/converters/ImageConverter';
 import MediaConverter from './pages/converters/MediaConverter';
 import DocumentConverter from './pages/converters/DocumentConverter';
-import { PdfToWordConverter } from './components/PdfToWordConverter';
 
 export default function App() {
   const [isLoading, setIsLoading] = useState(true);
@@ -66,7 +65,6 @@ export default function App() {
 
             <nav className="flex-1 space-y-1">
               <SidebarLink to="/" icon={<ImageIcon className="w-4 h-4" />} label="Dashboard" onClick={() => setIsSidebarOpen(false)} />
-              <SidebarLink to="/convert/pdf-to-word" icon={<Zap className="w-4 h-4" />} label="PDF to Word" onClick={() => setIsSidebarOpen(false)} />
               <SidebarLink to="/history" icon={<History className="w-4 h-4" />} label="History" onClick={() => setIsSidebarOpen(false)} />
               <SidebarLink to="/profile" icon={<User className="w-4 h-4" />} label="Profile" onClick={() => setIsSidebarOpen(false)} />
             </nav>
@@ -90,7 +88,6 @@ export default function App() {
                 <Route path="/convert/audio" element={<MediaConverter />} />
                 <Route path="/convert/video-to-audio" element={<MediaConverter />} />
                 <Route path="/convert/document" element={<DocumentConverter />} />
-                <Route path="/convert/pdf-to-word" element={<PdfToWordConverter />} />
                 <Route path="*" element={<Navigate to="/" />} />
               </Routes>
             </AnimatePresence>

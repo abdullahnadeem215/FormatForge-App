@@ -1,10 +1,10 @@
 import React, { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { motion, AnimatePresence } from 'motion/react';
-import { Upload, File, X, CheckCircle2, AlertCircle, Download, Loader2, FileText, Zap } from 'lucide-react';
-import { reconstructDocument, summarizeDocument } from '../../services/gemini';
+import { motion } from 'motion/react';
+import { File, X, CheckCircle2, AlertCircle, Download, Loader2, FileText, Zap } from 'lucide-react';
+import { summarizePdf } from '../../services/gemini';
 import { saveConversion } from '../../utils/storage';
-import { saveAs } from 'file-saver';
+import { cn } from '../../lib/utils';
 
 export default function DocumentConverter() {
   const [file, setFile] = useState<File | null>(null);
@@ -12,9 +12,6 @@ export default function DocumentConverter() {
   const [result, setResult] = useState<any | null>(null);
   const [summary, setSummary] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [method, setMethod] = useState<'gemini' | 'ilovepdf'>('ilovepdf');
-  const [isEditing, setIsEditing] = useState(false);
-  const [editableContent, setEditableContent] = useState('');
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     setFile(acceptedFiles[0]);
@@ -22,7 +19,7 @@ export default function DocumentConverter() {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: { 'image/*': ['.png', '.jpg', '.jpeg', '.webp'], 'application/pdf': ['.pdf'] },
+    accept: { 'application/pdf': ['.pdf'] },
     multiple: false
   } as any);
 
@@ -32,9 +29,39 @@ export default function DocumentConverter() {
     setError(null);
     setResult(null);
     setSummary(null);
-    setIsEditing(false);
 
     try {
+      // 1. Convert via Adobe PDF Services
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch('/api/convert/adobe-to-docx', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        let errorMessage = 'Adobe conversion failed';
+        try {
+          const contentType = response.headers.get('content-type');
+          const text = await response.text();
+          
+          if (contentType && contentType.includes('application/json') && text.trim()) {
+            const errData = JSON.parse(text);
+            errorMessage = errData.error || errorMessage;
+          } else if (text.trim()) {
+            errorMessage = text;
+          }
+        } catch (e) {
+          console.error('Error parsing server response:', e);
+        }
+        throw new Error(errorMessage);
+      }
+
+      const adobeBlob = await response.blob();
+      const docUrl = URL.createObjectURL(adobeBlob);
+
+      // 2. Get Summary via Gemini
       const reader = new FileReader();
       const base64Promise = new Promise<string>((resolve) => {
         reader.onload = () => {
@@ -44,104 +71,42 @@ export default function DocumentConverter() {
       });
       reader.readAsDataURL(file);
       const base64 = await base64Promise;
+      
+      const sum = await summarizePdf(base64); 
 
-      let conversionResult: any = null;
-      let ilovePdfBlob: Blob | null = null;
-      let docUrl = '';
-
-      if (method === 'ilovepdf') {
-        const formData = new FormData();
-        formData.append('file', file);
-
-        const response = await fetch('/api/convert/ilovepdf-to-docx', {
-          method: 'POST',
-          body: formData,
-        });
-
-        if (!response.ok) {
-          let errorMessage = 'iLovePDF conversion failed';
-          try {
-            const contentType = response.headers.get('content-type');
-            const text = await response.text();
-            
-            if (contentType && contentType.includes('application/json') && text.trim()) {
-              const errData = JSON.parse(text);
-              errorMessage = errData.error || errorMessage;
-            } else if (text.trim()) {
-              errorMessage = text;
-            }
-          } catch (e) {
-            console.error('Error parsing server response:', e);
-          }
-          throw new Error(errorMessage);
-        }
-
-        ilovePdfBlob = await response.blob();
-        docUrl = URL.createObjectURL(ilovePdfBlob);
-
-        // Still get editable content for preview
-        const reconstruction = await reconstructDocument(base64, file.type);
-        conversionResult = {
-          ...reconstruction,
-          isILovePdf: true,
-          docUrl,
-          name: file.name.substring(0, file.name.lastIndexOf('.')) + '.docx'
-        };
-      } else {
-        // Simple Gemini Markdown
-        const reconstruction = await reconstructDocument(base64, file.type);
-        conversionResult = reconstruction;
-      }
+      const conversionResult = {
+        isAdobe: true,
+        docUrl,
+        name: file.name.substring(0, file.name.lastIndexOf('.')) + '.docx'
+      };
 
       setResult(conversionResult);
-      setEditableContent(conversionResult.content);
-
-      // Always get a summary using Gemini
-      const sum = await summarizeDocument(conversionResult.content);
       setSummary(sum);
 
       // Save to history locally
-      const finalBlob = ilovePdfBlob || new Blob([conversionResult.content], { type: 'text/markdown' });
       saveConversion({
         type: 'document',
-        input_format: file.name.split('.').pop() || '',
-        output_format: method === 'ilovepdf' ? 'docx' : 'md',
+        input_format: 'pdf',
+        output_format: 'docx',
         input_size: file.size,
-        output_size: finalBlob.size,
+        output_size: adobeBlob.size,
         status: 'completed',
-        file_name: conversionResult.name || (file.name.substring(0, file.name.lastIndexOf('.')) + (method === 'ilovepdf' ? '.docx' : '.md'))
-      }, finalBlob);
+        file_name: conversionResult.name
+      }, adobeBlob);
+
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Processing failed. Ensure the file is clear and valid.');
+      setError(err instanceof Error ? err.message : 'Processing failed. Ensure the file is valid.');
       console.error(err);
     } finally {
       setProcessing(false);
     }
   };
 
-  const downloadModified = () => {
-    const blob = new Blob([editableContent], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
+  const downloadResult = () => {
+    if (!result?.docUrl) return;
     const a = document.createElement('a');
-    a.href = url;
-    a.download = 'edited_document.md';
-    a.click();
-  };
-
-  const downloadOriginal = () => {
-    if (!result) return;
-    if (result.isILovePdf && result.docUrl) {
-      const a = document.createElement('a');
-      a.href = result.docUrl;
-      a.download = result.name || 'document.docx';
-      a.click();
-      return;
-    }
-    const blob = new Blob([result.content], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'original_reconstruction.md';
+    a.href = result.docUrl;
+    a.download = result.name || 'document.docx';
     a.click();
   };
 
@@ -157,10 +122,10 @@ export default function DocumentConverter() {
         <div className="flex items-center gap-2">
           <h2 className="text-3xl font-light tracking-tight">Document Pro</h2>
           <span className="px-2.5 py-1 bg-purple-500/10 border border-purple-500/20 rounded-md text-[10px] font-bold text-purple-400 uppercase tracking-wider">
-            {method === 'gemini' ? 'Gemini 2.5 Flash' : 'iLovePDF Pro'}
+            Adobe PDF Services
           </span>
         </div>
-        <p className="text-text-dim text-sm">Advanced AI reconstruction of documents from images or PDFs. Preserves layout, tables, and formatting entirely client-side.</p>
+        <p className="text-text-dim text-sm">Professional PDF to Word conversion powered by Adobe ®, featuring Gemini AI intelligent summaries.</p>
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -180,8 +145,8 @@ export default function DocumentConverter() {
                   <FileText className="w-8 h-8 text-text-dim" />
                 </div>
                 <div>
-                  <p className="text-lg font-medium">Upload a document or image</p>
-                  <p className="text-sm text-text-dim">Supports PDF, PNG, JPG</p>
+                  <p className="text-lg font-medium">Upload a PDF document</p>
+                  <p className="text-sm text-text-dim">Supports Professional DOCX Output</p>
                 </div>
               </div>
             </div>
@@ -189,50 +154,20 @@ export default function DocumentConverter() {
             <div className="space-y-6">
               <div className="p-8 bg-surface border border-border rounded-[24px] space-y-6">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xl font-semibold">
-                    {result.isILovePdf ? 'Document Analysis' : 'AI Reconstruction'}
-                  </h3>
-                  <div className="flex items-center gap-4">
-                    <button 
-                      onClick={() => setIsEditing(!isEditing)} 
-                      className={cn(
-                        "text-sm font-bold transition-colors",
-                        isEditing ? "text-green-500" : "text-purple-400"
-                      )}
-                    >
-                      {isEditing ? '✓ View Preview' : '✎ Edit Document'}
-                    </button>
-                    <div className="flex items-center gap-2">
-                       <button onClick={downloadOriginal} className="flex items-center gap-2 text-sm font-bold text-text-dim hover:text-white transition-colors">
-                        <Download className="w-4 h-4" /> {result.isILovePdf ? 'Get DOCX' : 'Get Markdown'}
-                      </button>
-                      {isEditing && (
-                        <button onClick={downloadModified} className="flex items-center gap-2 text-sm font-bold text-purple-400 hover:text-purple-300 transition-colors">
-                          <Download className="w-4 h-4" /> Save Edited
-                        </button>
-                      )}
-                    </div>
-                  </div>
+                  <h3 className="text-xl font-semibold">Document Ready</h3>
+                  <button onClick={downloadResult} className="flex items-center gap-2 text-sm font-bold text-purple-400 hover:text-purple-300 transition-colors">
+                    <Download className="w-4 h-4" /> Download DOCX
+                  </button>
                 </div>
 
-                <div className="relative group">
-                  {isEditing ? (
-                    <textarea
-                      value={editableContent}
-                      onChange={(e) => setEditableContent(e.target.value)}
-                      className="w-full h-[400px] bg-black/40 p-6 rounded-xl border border-purple-500/30 font-mono text-sm focus:outline-none focus:border-purple-500 resize-none"
-                      placeholder="Edit document content..."
-                    />
-                  ) : (
-                    <div className="prose prose-invert max-w-none bg-black/20 p-6 rounded-xl border border-border max-h-[400px] overflow-y-auto font-mono text-sm whitespace-pre-wrap">
-                      {editableContent || result.content}
-                    </div>
-                  )}
-                  {result.isILovePdf && !isEditing && (
-                    <div className="absolute top-4 right-4 px-2 py-1 bg-green-500/20 text-green-400 rounded text-[10px] uppercase font-bold tracking-widest pointer-events-none">
-                      {result.isILovePdf ? 'Professional PDF Conversion' : 'High-Fidelity Reconstruction'}
-                    </div>
-                  )}
+                <div className="bg-black/20 p-12 rounded-xl border border-dashed border-border flex flex-col items-center justify-center text-center gap-4">
+                   <div className="p-4 bg-green-500/10 rounded-full">
+                     <CheckCircle2 className="w-12 h-12 text-green-500" />
+                   </div>
+                   <div>
+                     <p className="text-lg font-medium text-white">Conversion Successful</p>
+                     <p className="text-sm text-text-dim">Your high-fidelity Word document is ready.</p>
+                   </div>
                 </div>
               </div>
 
@@ -265,38 +200,21 @@ export default function DocumentConverter() {
 
         <div className="space-y-6">
           <div className="p-6 bg-surface border border-border rounded-[24px] space-y-6">
-            <h3 className="font-semibold text-lg">AI Actions</h3>
+            <h3 className="font-semibold text-lg">AI Pro Actions</h3>
             
-            <div className="space-y-3">
-              <label className="text-xs text-text-dim font-bold uppercase tracking-widest">Processing Method</label>
-              <div className="grid grid-cols-1 gap-2">
-                <button
-                  onClick={() => setMethod('gemini')}
-                  className={cn(
-                    "p-3 rounded-xl text-left border transition-all",
-                    method === 'gemini' ? "border-purple-500 bg-purple-500/5" : "border-border bg-white/5 text-text-dim"
-                  )}
-                >
-                  <div className="font-bold text-sm">Gemini AI</div>
-                  <div className="text-[10px] opacity-70">Best for layout reconstruction & summary</div>
-                </button>
-                <button
-                  onClick={() => setMethod('ilovepdf')}
-                  className={cn(
-                    "p-3 rounded-xl text-left border transition-all",
-                    method === 'ilovepdf' ? "border-purple-500 bg-purple-500/5" : "border-border bg-white/5 text-text-dim"
-                  )}
-                >
-                  <div className="font-bold text-sm">iLovePDF (Pro)</div>
-                  <div className="text-[10px] opacity-70">Best for complex layouts & images</div>
-                </button>
+            <div className="space-y-2">
+              <div className="p-3 rounded-xl border border-purple-500 bg-purple-500/5">
+                <div className="font-bold text-sm">Adobe PDF Services</div>
+                <div className="text-[10px] opacity-70">Official high-fidelity DOCX conversion</div>
+              </div>
+              <div className="p-3 rounded-xl border border-border bg-white/5 opacity-50">
+                <div className="font-bold text-sm">Gemini Analysis</div>
+                <div className="text-[10px] opacity-70">Provides intelligent document summary</div>
               </div>
             </div>
 
             <p className="text-xs text-text-dim leading-relaxed">
-              {method === 'gemini' 
-                ? 'Gemini 2.5 Flash will analyze your document to extract text, tables, and maintain formatting.'
-                : 'iLovePDF Pro will convert your document into a pixel-perfect Word file, preserving all images and tables.'}
+              Adobe PDF Services will convert your PDF into a native Word file, preserving all formatting, images and tables perfectly. Gemini AI provides a high-level summary.
             </p>
 
             <button
@@ -311,7 +229,7 @@ export default function DocumentConverter() {
                   Processing...
                 </>
               ) : (
-                <>Start {method === 'gemini' ? 'AI Reconstruction' : 'iLovePDF Conversion'}</>
+                <>Start Pro Conversion</>
               )}
             </button>
 
@@ -338,5 +256,3 @@ export default function DocumentConverter() {
     </motion.div>
   );
 }
-
-import { cn } from '../../lib/utils';
