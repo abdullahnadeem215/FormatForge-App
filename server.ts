@@ -34,6 +34,16 @@ app.get("/api/ping", (req, res) => {
   res.json({ status: "ok", message: "API is reachable", environment: process.env.NODE_ENV });
 });
 
+app.get("/api/debug-env", (req, res) => {
+  res.json({
+    hasAdobeClientId: !!process.env.ADOBE_CLIENT_ID,
+    hasAdobeClientSecret: !!process.env.ADOBE_CLIENT_SECRET,
+    hasGeminiKey: !!process.env.GEMINI_API_KEY,
+    nodeEnv: process.env.NODE_ENV,
+    vercelEnv: process.env.VERCEL_ENV,
+  });
+});
+
 app.get("/api/test-adobe-credentials", async (req, res) => {
   const clientId = process.env.ADOBE_CLIENT_ID;
   const clientSecret = process.env.ADOBE_CLIENT_SECRET;

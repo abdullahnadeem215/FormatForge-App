@@ -13,6 +13,7 @@ export default function DocumentConverter() {
   const [error, setError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<any>(null);
   const [pingResult, setPingResult] = useState<any>(null);
+  const [debugResult, setDebugResult] = useState<any>(null);
   const [testing, setTesting] = useState(false);
   const [method, setMethod] = useState<'gemini' | 'adobe'>('gemini');
   const [isEditing, setIsEditing] = useState(false);
@@ -128,6 +129,7 @@ export default function DocumentConverter() {
     setTesting(true);
     setTestResult(null);
     setPingResult(null);
+    setDebugResult(null);
     try {
       // First, check basic connectivity
       const pingResp = await fetch('/api/ping');
@@ -135,6 +137,11 @@ export default function DocumentConverter() {
       setPingResult(pingData);
 
       if (pingResp.ok) {
+        // Check environment variables
+        const debugResp = await fetch('/api/debug-env');
+        const debugData = await debugResp.json();
+        setDebugResult(debugData);
+
         const resp = await fetch('/api/test-adobe-credentials');
         const data = await resp.json();
         setTestResult(data);
@@ -376,6 +383,13 @@ export default function DocumentConverter() {
                         pingResult.status === 'ok' ? "bg-green-500/5 text-green-400/70" : "bg-red-500/5 text-red-400/70"
                       )}>
                         API Status: {pingResult.message}
+                      </div>
+                    )}
+                    {debugResult && (
+                      <div className="p-3 bg-white/5 border border-white/10 rounded-lg text-[10px] font-mono text-white/50 space-y-1">
+                        <div className="flex justify-between"><span>Adobe ID:</span> <span className={debugResult.hasAdobeClientId ? "text-green-400" : "text-red-400"}>{debugResult.hasAdobeClientId ? "PROVISIONED" : "MISSING"}</span></div>
+                        <div className="flex justify-between"><span>Adobe Secret:</span> <span className={debugResult.hasAdobeClientSecret ? "text-green-400" : "text-red-400"}>{debugResult.hasAdobeClientSecret ? "PROVISIONED" : "MISSING"}</span></div>
+                        <div className="flex justify-between"><span>Environment:</span> <span>{debugResult.vercelEnv || debugResult.nodeEnv}</span></div>
                       </div>
                     )}
                     {testResult && (
