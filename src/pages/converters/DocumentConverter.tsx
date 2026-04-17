@@ -12,6 +12,8 @@ export default function DocumentConverter() {
   const [summary, setSummary] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [method, setMethod] = useState<'gemini' | 'adobe'>('gemini');
+  const [isEditing, setIsEditing] = useState(false);
+  const [editableContent, setEditableContent] = useState('');
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     setFile(acceptedFiles[0]);
@@ -29,8 +31,23 @@ export default function DocumentConverter() {
     setError(null);
     setResult(null);
     setSummary(null);
+    setIsEditing(false);
 
     try {
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve) => {
+        reader.onload = () => {
+          const base64 = (reader.result as string).split(',')[1];
+          resolve(base64);
+        };
+      });
+      reader.readAsDataURL(file);
+      const base64 = await base64Promise;
+
+      let conversionResult: any = null;
+      let adobeUrl = '';
+      let adobeBlob: Blob | null = null;
+
       if (method === 'adobe') {
         if (file.type !== 'application/pdf') {
           throw new Error('Adobe conversion only supports PDF files.');
@@ -45,69 +62,72 @@ export default function DocumentConverter() {
         });
 
         if (!response.ok) {
-          const errData = await response.json();
+          const responseText = await response.text();
+          let errData;
+          try {
+            errData = JSON.parse(responseText);
+          } catch (e) {
+            throw new Error(`Adobe Conversion failed: ${response.status} ${response.statusText}. This often happens on Vercel due to 10s timeout limits.`);
+          }
           throw new Error(errData.error || 'Adobe conversion failed');
         }
 
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        const name = file.name.substring(0, file.name.lastIndexOf('.')) + '.docx';
+        adobeBlob = await response.blob();
+        adobeUrl = URL.createObjectURL(adobeBlob);
         
-        setResult({ content: 'Document converted successfully using Adobe PDF Services. Click download to get your DOCX file.', isAdobe: true, url, name });
-        
-        // Save to history locally
-        saveConversion({
-          type: 'document',
-          input_format: file.name.split('.').pop() || '',
-          output_format: 'docx',
-          input_size: file.size,
-          output_size: blob.size,
-          status: 'completed',
-          file_name: name
-        });
-      } else {
-        const reader = new FileReader();
-        const base64Promise = new Promise<string>((resolve) => {
-          reader.onload = () => {
-            const base64 = (reader.result as string).split(',')[1];
-            resolve(base64);
-          };
-        });
-        reader.readAsDataURL(file);
-        const base64 = await base64Promise;
-
-        // Use Gemini to reconstruct
+        // Also use Gemini to get editable content for preview/edit
         const reconstruction = await reconstructDocument(base64, file.type);
-        setResult(reconstruction);
-
-        // Also get a summary
-        const sum = await summarizeDocument(reconstruction.content);
-        setSummary(sum);
-
-        // Save to history locally
-        saveConversion({
-          type: 'document',
-          input_format: file.name.split('.').pop() || '',
-          output_format: 'docx',
-          input_size: file.size,
-          output_size: 0, // AI reconstruction result is text/markdown usually
-          status: 'completed',
-          file_name: file.name.substring(0, file.name.lastIndexOf('.')) + '.docx'
-        });
+        conversionResult = {
+          content: reconstruction.content,
+          isAdobe: true,
+          adobeUrl,
+          name: file.name.substring(0, file.name.lastIndexOf('.')) + '.docx'
+        };
+      } else {
+        // Use Gemini for both reconstruction and editing
+        const reconstruction = await reconstructDocument(base64, file.type);
+        conversionResult = reconstruction;
       }
+
+      setResult(conversionResult);
+      setEditableContent(conversionResult.content);
+
+      // Always get a summary using Gemini
+      const sum = await summarizeDocument(conversionResult.content);
+      setSummary(sum);
+
+      // Save to history locally
+      saveConversion({
+        type: 'document',
+        input_format: file.name.split('.').pop() || '',
+        output_format: method === 'adobe' ? 'docx' : 'md',
+        input_size: file.size,
+        output_size: adobeBlob?.size || 0,
+        status: 'completed',
+        file_name: conversionResult.name || (file.name.substring(0, file.name.lastIndexOf('.')) + (method === 'adobe' ? '.docx' : '.md'))
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'AI processing failed. Ensure the file is a clear image or PDF.');
+      setError(err instanceof Error ? err.message : 'Processing failed. Ensure the file is clear and valid.');
       console.error(err);
     } finally {
       setProcessing(false);
     }
   };
 
-  const downloadMarkdown = () => {
+  const downloadModified = () => {
+    const blob = new Blob([editableContent], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'edited_document.md';
+    a.click();
+  };
+
+  const downloadOriginal = () => {
     if (!result) return;
-    if (result.isAdobe) {
+    if (result.isAdobe && result.adobeUrl) {
       const a = document.createElement('a');
-      a.href = result.url;
+      a.href = result.adobeUrl;
       a.download = result.name;
       a.click();
       return;
@@ -116,7 +136,7 @@ export default function DocumentConverter() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'reconstructed_document.md';
+    a.download = 'original_reconstruction.md';
     a.click();
   };
 
@@ -165,14 +185,49 @@ export default function DocumentConverter() {
               <div className="p-8 bg-surface border border-border rounded-[24px] space-y-6">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xl font-semibold">
-                    {result.isAdobe ? 'Conversion Complete' : 'Reconstructed Content'}
+                    {result.isAdobe ? 'Editable Preview' : 'AI Reconstruction'}
                   </h3>
-                  <button onClick={downloadMarkdown} className="flex items-center gap-2 text-sm font-bold text-purple-400">
-                    <Download className="w-4 h-4" /> {result.isAdobe ? 'Download DOCX' : 'Download Markdown'}
-                  </button>
+                  <div className="flex items-center gap-4">
+                    <button 
+                      onClick={() => setIsEditing(!isEditing)} 
+                      className={cn(
+                        "text-sm font-bold transition-colors",
+                        isEditing ? "text-green-500" : "text-purple-400"
+                      )}
+                    >
+                      {isEditing ? '✓ View Preview' : '✎ Edit Document'}
+                    </button>
+                    <div className="flex items-center gap-2">
+                       <button onClick={downloadOriginal} className="flex items-center gap-2 text-sm font-bold text-text-dim hover:text-white transition-colors">
+                        <Download className="w-4 h-4" /> {result.isAdobe ? 'Get DOCX' : 'Get Original'}
+                      </button>
+                      {isEditing && (
+                        <button onClick={downloadModified} className="flex items-center gap-2 text-sm font-bold text-purple-400 hover:text-purple-300 transition-colors">
+                          <Download className="w-4 h-4" /> Save Edited
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div className="prose prose-invert max-w-none bg-black/20 p-6 rounded-xl border border-border max-h-[400px] overflow-y-auto font-mono text-sm whitespace-pre-wrap">
-                  {result.content}
+
+                <div className="relative group">
+                  {isEditing ? (
+                    <textarea
+                      value={editableContent}
+                      onChange={(e) => setEditableContent(e.target.value)}
+                      className="w-full h-[400px] bg-black/40 p-6 rounded-xl border border-purple-500/30 font-mono text-sm focus:outline-none focus:border-purple-500 resize-none"
+                      placeholder="Edit document content..."
+                    />
+                  ) : (
+                    <div className="prose prose-invert max-w-none bg-black/20 p-6 rounded-xl border border-border max-h-[400px] overflow-y-auto font-mono text-sm whitespace-pre-wrap">
+                      {editableContent || result.content}
+                    </div>
+                  )}
+                  {result.isAdobe && !isEditing && (
+                    <div className="absolute top-4 right-4 px-2 py-1 bg-blue-500/20 text-blue-400 rounded text-[10px] uppercase font-bold tracking-widest pointer-events-none">
+                      AI Preview from PDF
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -180,11 +235,11 @@ export default function DocumentConverter() {
                 <div className="p-8 bg-purple-500/5 border border-purple-500/20 rounded-[24px] space-y-4">
                   <h3 className="text-lg font-semibold flex items-center gap-2">
                     <Zap className="w-5 h-5 text-purple-400" />
-                    AI Summary
+                    Gemini AI Summary
                   </h3>
-                  <p className="text-text-dim leading-relaxed text-sm">
+                  <div className="text-text-dim leading-relaxed text-sm whitespace-pre-line">
                     {summary}
-                  </p>
+                  </div>
                 </div>
               )}
             </div>

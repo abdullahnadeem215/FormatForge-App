@@ -21,11 +21,13 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const upload = multer({ dest: "uploads/" });
+const upload = multer({ dest: "/tmp" });
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
+
+  console.log("Starting server with process.env.NODE_ENV:", process.env.NODE_ENV);
 
   app.use(cors());
   app.use(express.json());

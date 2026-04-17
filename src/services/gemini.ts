@@ -22,7 +22,7 @@ export const PDF_TO_WORD_SCHEMA = {
 
 export async function summarizeDocument(text: string) {
   const response = await ai.models.generateContent({
-    model: "gemini-2.0-flash",
+    model: "gemini-3-flash-preview",
     contents: `Summarize the following document content into key points:\n\n${text}`,
   });
   return response.text;
@@ -30,7 +30,7 @@ export async function summarizeDocument(text: string) {
 
 export async function enhanceImageDescription(imageBase64: string, mimeType: string) {
   const response = await ai.models.generateContent({
-    model: "gemini-2.0-flash",
+    model: "gemini-3-flash-preview",
     contents: {
       parts: [
         { text: "Analyze this image and provide a detailed description and suggestions for enhancement." },
@@ -43,7 +43,7 @@ export async function enhanceImageDescription(imageBase64: string, mimeType: str
 
 export async function reconstructDocument(imageBase64: string, mimeType: string) {
   const response = await ai.models.generateContent({
-    model: "gemini-2.0-flash",
+    model: "gemini-3-flash-preview",
     contents: {
       parts: [
         { text: "Reconstruct this document into a structured Markdown format. Preserve layout, tables, and headers as accurately as possible." },
